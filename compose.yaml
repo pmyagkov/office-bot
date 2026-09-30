@@ -1,0 +1,27 @@
+services:
+  bot:
+    image: ${OFFICE_BOT_IMAGE:?Set OFFICE_BOT_IMAGE to the exact release tag}
+    pull_policy: never
+    user: "${OFFICE_BOT_UID:-1000}:${OFFICE_BOT_GID:-1000}"
+    restart: unless-stopped
+    env_file:
+      - ${OFFICE_BOT_ENV_FILE:-/opt/nanoclaw/secrets/office-bot/bot.env}
+    environment:
+      DATABASE_PATH: /app/data/office.db
+      HEARTBEAT_PATH: /app/data/heartbeat.json
+      TZ: Europe/Belgrade
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 64
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '3'

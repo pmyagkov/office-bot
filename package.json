@@ -1,0 +1,30 @@
+{
+  "name": "office-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.3 <23"
+  },
+  "scripts": {
+    "pretest": "npm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node --env-file=.env dist/main.js",
+    "discover": "node --env-file=.env dist/cli.js discover",
+    "health": "node dist/cli.js health",
+    "backup": "node --env-file=.env dist/cli.js backup",
+    "operations": "node --env-file=.env dist/cli.js operations"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "grammy": "1.46.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "22.20.4",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
