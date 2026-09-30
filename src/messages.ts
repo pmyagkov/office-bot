@@ -1,5 +1,8 @@
 import type { InlineKeyboardMarkup } from 'grammy/types';
 import type { Assignment, Participant } from './types.js';
+import type { DayState } from './types.js';
+import type { Store } from './store.js';
+import type { TelegramPort } from './telegram.js';
 export const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 export const mention = (user: Participant) => `<a href="tg://user?id=${user.id}">${escapeHtml(user.name.slice(0, 100))}</a>`;
 export function names(people: Participant[], budget = 2500): string {
@@ -20,4 +23,13 @@ export function confirmationTime(iso: string, zone: string): string {
 export function assignmentMessage(a: Assignment, zone: string): string {
   if (a.confirmedAt) return `✅ ${mention(a.helper)} confirmed check-ins for: ${names(a.recipients)}.\n\nConfirmed on ${confirmationTime(a.confirmedAt, zone)} (${escapeHtml(zone)}).\nAssignment date: ${a.day}.`;
   return `🎉 ${mention(a.helper)}, you won! You're on badge duty today.\n\nPlease check in: ${names(a.recipients)}.\n\nAssignment date: ${a.day}.`;
+}
+export async function refreshAssignments(store: Store, telegram: TelegramPort, zone: string): Promise<void> {
+  for (const day of store.list<DayState>('day:')) {
+    const a = day.assignment; if (!a?.confirmedAt || !a.messageId || a.rendered) continue;
+    try {
+      await telegram.editMessage(a.chatId, a.messageId, assignmentMessage(a, zone));
+      a.rendered = true; store.set(`day:${day.day}`, day);
+    } catch { /* Retry this idempotent edit on the next tick. */ }
+  }
 }

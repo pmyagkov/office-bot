@@ -2,7 +2,7 @@ import { createDelivery } from '../../src/delivery.js';
 import { createScheduler } from '../../src/scheduler.js';
 import { openStore } from '../../src/store.js';
 import { createTelegram } from '../../src/telegram.js';
-import { applyPollUpdate } from '../../src/updates.js';
+import { applyPollUpdate, createUpdates } from '../../src/updates.js';
 import type { DayState, PollKind } from '../../src/types.js';
 import { events, groupId } from '../fixtures/telegram-updates.js';
 import { mockTelegram } from '../mocks/telegram.js';
@@ -13,6 +13,7 @@ export function harness(path = ':memory:', chooseIndex = (_size: number) => 0) {
   const telegram = createTelegram('123456:dummy_dummy_dummy', { transformer: mock.transformer });
   const delivery = createDelivery(store);
   const scheduler = createScheduler({ store, telegram, delivery, schedule, chooseIndex, chatId: groupId });
+  const updates = createUpdates({ store, telegram, delivery, schedule, chatId: groupId, username: 'office_test_bot' });
   const day = () => store.get<DayState>('day:2026-09-30')!;
   const calls = (method: string) => mock.calls.filter(c => c.method === method);
   function vote(kind: PollKind, id: number, option: number | null = 0, name?: string) {
@@ -23,5 +24,5 @@ export function harness(path = ':memory:', chooseIndex = (_size: number) => 0) {
     remote.total_voter_count = remote.options.reduce((sum, o) => sum + o.voter_count, 0);
   }
   async function close() { await scheduler.tick(at('10:00')); await scheduler.finishClosing(at('10:00')); }
-  return { store, mock, event, telegram, delivery, scheduler, day, calls, vote, close };
+  return { store, mock, event, telegram, delivery, scheduler, updates, day, calls, vote, close };
 }

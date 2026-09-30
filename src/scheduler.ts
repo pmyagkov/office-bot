@@ -3,7 +3,7 @@ import type { TelegramPort } from './telegram.js';
 import type { Delivery } from './delivery.js';
 import { pollKinds, type DayState, type Operation, type PollSnapshot, type PollState, type Schedule } from './types.js';
 import { localTime, scheduledInstant } from './clock.js';
-import { assignmentMessage, confirmKeyboard } from './messages.js';
+import { assignmentMessage, confirmKeyboard, refreshAssignments } from './messages.js';
 export type Services = { store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number; chooseIndex: (size: number) => number };
 export function createScheduler({ store, telegram, delivery, schedule, chatId, chooseIndex }: Services) {
   const save = (day: DayState) => store.set(`day:${day.day}`, day);
@@ -49,7 +49,16 @@ export function createScheduler({ store, telegram, delivery, schedule, chatId, c
             save(day);
           }
         } else await publish(day, now);
+        const a = day.assignment;
+        if (a && a.day === local.day && local.minute >= schedule.reminderMinute && a.messageId && !a.confirmedAt) {
+          await delivery.deliver(`reminder:${day.day}`, now, async () => {
+            if (store.get<DayState>(`day:${day.day}`)?.assignment?.confirmedAt) return { kind: 'rejected', code: 409 };
+            const link = String(chatId).startsWith('-100') ? `\n\n<a href="https://t.me/c/${String(chatId).slice(4)}/${a.messageId}">Open assignment</a>` : `\nAssignment date: ${day.day}. Open the office group.`;
+            return telegram.sendMessage(a.helper.id, `You're on badge duty today, and the check-ins haven't been confirmed yet. Once you're done, tap “I've checked everyone in” on the assignment message in the group.${link}`);
+          });
+        }
       }
+      await refreshAssignments(store, telegram, schedule.zone);
     },
     async finishClosing(now: Date): Promise<void> {
       for (const day of store.list<DayState>('day:')) {
