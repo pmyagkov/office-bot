@@ -10,7 +10,7 @@ import { createUpdates } from './updates.js';
 export function createRuntime(config: Config, store: Store, telegram: TelegramPort, clock: () => Date, username: string) {
   const services = { store, telegram, delivery: createDelivery(store), schedule: config.schedule, chatId: config.chatId };
   const scheduler = createScheduler({ ...services, chooseIndex: randomInt, clock });
-  const updates = createUpdates({ ...services, username });
+  const updates = createUpdates({ ...services, username, clock });
   async function drain(timeout: number) {
     while (true) {
       const batch = await telegram.getUpdates(store.get<number>('offset') ?? 0, timeout);
@@ -22,10 +22,13 @@ export function createRuntime(config: Config, store: Store, telegram: TelegramPo
   return {
     async step(timeout = 0): Promise<void> {
       scheduler.restoreDeliveries();
+      updates.restoreTestDeliveries();
       await drain(timeout); // Commit queued confirmations before considering reminders.
       await scheduler.tick(clock());
+      await updates.flushTestFlow(clock());
       await drain(0); // stopPoll may enqueue final poll snapshots and vote changes.
       await scheduler.finishClosing(clock());
+      await updates.flushTestFlow(clock(), true);
       await updates.flushReplies(clock());
       if (config.heartbeat) {
         mkdirSync(dirname(config.heartbeat), { recursive: true, mode: 0o700 });
