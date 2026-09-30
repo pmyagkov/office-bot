@@ -7,10 +7,12 @@
     "node": ">=22.22.3 <23"
   },
   "scripts": {
+    "pretest": "npm run build",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "node --env-file=.env dist/main.js",
+    "discover": "node --env-file=.env dist/cli.js discover",
     "health": "node dist/cli.js health",
     "backup": "node --env-file=.env dist/cli.js backup",
     "operations": "node --env-file=.env dist/cli.js operations"

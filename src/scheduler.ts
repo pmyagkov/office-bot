@@ -8,6 +8,14 @@ export type Services = { store: Store; telegram: TelegramPort; delivery: Deliver
 export function createScheduler({ store, telegram, delivery, schedule, chatId, chooseIndex }: Services) {
   const save = (day: DayState) => store.set(`day:${day.day}`, day);
   const due = (day: DayState, now: Date) => now >= scheduledInstant(day.day, schedule.closeMinute, schedule.zone);
+  function restorePolls() {
+    for (const day of store.list<DayState>('day:')) for (const kind of pollKinds) {
+      const op = store.get<Operation<PollSnapshot>>(`op:poll:${day.day}:${kind}`);
+      if (!day.polls[kind] && op?.status === 'sent' && op.value) {
+        day.polls[kind] = { ...op.value, votes: {} }; save(day);
+      }
+    }
+  }
   async function publish(day: DayState, now: Date) {
     const a = day.assignment;
     if (a && !a.messageId) {
@@ -19,7 +27,9 @@ export function createScheduler({ store, telegram, delivery, schedule, chatId, c
     }
   }
   return {
+    restorePolls,
     async tick(now: Date): Promise<void> {
+      restorePolls();
       const local = localTime(now, schedule.zone);
       const deadline = scheduledInstant(local.day, schedule.closeMinute, schedule.zone);
       if (local.weekday <= 5 && local.minute >= schedule.openMinute && deadline.getTime() - now.getTime() >= 5_000) {
@@ -32,12 +42,6 @@ export function createScheduler({ store, telegram, delivery, schedule, chatId, c
         }
       }
       for (const day of store.list<DayState>('day:')) {
-        for (const kind of pollKinds) {
-          const op = store.get<Operation<PollSnapshot>>(`op:poll:${day.day}:${kind}`);
-          if (!day.polls[kind] && op?.status === 'sent' && op.value) {
-            day.polls[kind] = { ...op.value, votes: {} }; save(day);
-          }
-        }
         if (['open', 'closing', 'incomplete'].includes(day.phase) && due(day, now)) {
           day.phase = 'closing'; save(day);
           for (const kind of pollKinds) {
