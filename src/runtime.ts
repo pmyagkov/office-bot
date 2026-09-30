@@ -9,7 +9,7 @@ import { createScheduler } from './scheduler.js';
 import { createUpdates } from './updates.js';
 export function createRuntime(config: Config, store: Store, telegram: TelegramPort, clock: () => Date, username: string) {
   const services = { store, telegram, delivery: createDelivery(store), schedule: config.schedule, chatId: config.chatId };
-  const scheduler = createScheduler({ ...services, chooseIndex: randomInt });
+  const scheduler = createScheduler({ ...services, chooseIndex: randomInt, clock });
   const updates = createUpdates({ ...services, username });
   async function drain(timeout: number) {
     while (true) {
@@ -21,7 +21,7 @@ export function createRuntime(config: Config, store: Store, telegram: TelegramPo
   }
   return {
     async step(timeout = 0): Promise<void> {
-      scheduler.restorePolls();
+      scheduler.restoreDeliveries();
       await drain(timeout); // Commit queued confirmations before considering reminders.
       await scheduler.tick(clock());
       await drain(0); // stopPoll may enqueue final poll snapshots and vote changes.

@@ -12,6 +12,7 @@ import { openStore } from '../src/store.js';
 import type { DayState, Operation } from '../src/types.js';
 import { fakeServer } from './fake-telegram-server.js';
 import { events, groupId } from './fixtures/telegram-updates.js';
+import { recoverOperation } from '../src/operations.js';
 const instances: ReturnType<typeof harness>[] = [];
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { instances.splice(0).forEach(h => h.store.close()); for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -38,6 +39,20 @@ it('does not advance the cursor if applying an update fails', async () => {
   await expect(h.updates.handleUpdate(h.event.vote(h.day().polls.request!.id, 22, 0), at('09:30'))).rejects.toThrow('disk error');
   h.store.set = original;
   expect(h.store.get('offset')).toBeUndefined(); expect(h.day().polls.request?.votes).toEqual({});
+});
+it.each([false, true])('restores the assignment identity before a queued confirmation (operator resolution: %s)', async resolved => {
+  const h = harness(); instances.push(h); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); h.vote('request', 22); await h.close();
+  const day = h.day(); day.assignment!.messageId = null; h.store.set(`day:${day.day}`, day);
+  const messageId = resolved ? 42 : 3;
+  if (resolved) {
+    h.store.set('op:assignment:2026-09-30', { key: 'assignment:2026-09-30', status: 'uncertain' });
+    recoverOperation(h.store, 'assignment:2026-09-30', 'resolve', messageId);
+  }
+  h.mock.updates.push(h.event.click('2026-09-30', 11, messageId));
+  await createRuntime({ ...config, heartbeat: '' }, h.store, h.telegram, () => at('11:00'), 'office_test_bot').step();
+  expect(h.day().assignment?.confirmedAt).toBe(at('11:00').toISOString());
+  expect(h.calls('answerCallbackQuery').at(-1)?.payload.text).toContain('recorded');
+  expect(h.calls('sendMessage')).toHaveLength(1);
 });
 async function processHarness() {
   const dir = mkdtempSync(join(tmpdir(), 'office-process-')); const database = join(dir, 'office.db');

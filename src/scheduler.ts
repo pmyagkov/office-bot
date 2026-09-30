@@ -4,15 +4,22 @@ import type { Delivery } from './delivery.js';
 import { pollKinds, type DayState, type Operation, type PollSnapshot, type PollState, type Schedule } from './types.js';
 import { localTime, scheduledInstant } from './clock.js';
 import { assignmentMessage, confirmKeyboard, refreshAssignments } from './messages.js';
-export type Services = { store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number; chooseIndex: (size: number) => number };
-export function createScheduler({ store, telegram, delivery, schedule, chatId, chooseIndex }: Services) {
+export type Services = { store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number; chooseIndex: (size: number) => number; clock?: () => Date };
+export function createScheduler({ store, telegram, delivery, schedule, chatId, chooseIndex, clock }: Services) {
   const save = (day: DayState) => store.set(`day:${day.day}`, day);
   const due = (day: DayState, now: Date) => now >= scheduledInstant(day.day, schedule.closeMinute, schedule.zone);
-  function restorePolls() {
-    for (const day of store.list<DayState>('day:')) for (const kind of pollKinds) {
-      const op = store.get<Operation<PollSnapshot>>(`op:poll:${day.day}:${kind}`);
-      if (!day.polls[kind] && op?.status === 'sent' && op.value) {
-        day.polls[kind] = { ...op.value, votes: {} }; save(day);
+  function restoreDeliveries() {
+    for (const day of store.list<DayState>('day:')) {
+      for (const kind of pollKinds) {
+        const op = store.get<Operation<PollSnapshot>>(`op:poll:${day.day}:${kind}`);
+        if (!day.polls[kind] && op?.status === 'sent' && op.value) {
+          day.polls[kind] = { ...op.value, votes: {} }; save(day);
+        }
+      }
+      const assignment = day.assignment;
+      const sent = store.get<Operation<number>>(`op:assignment:${day.day}`);
+      if (assignment && !assignment.messageId && sent?.status === 'sent' && sent.value) {
+        assignment.messageId = sent.value; save(day);
       }
     }
   }
@@ -27,9 +34,9 @@ export function createScheduler({ store, telegram, delivery, schedule, chatId, c
     }
   }
   return {
-    restorePolls,
+    restoreDeliveries,
     async tick(now: Date): Promise<void> {
-      restorePolls();
+      restoreDeliveries();
       const local = localTime(now, schedule.zone);
       const deadline = scheduledInstant(local.day, schedule.closeMinute, schedule.zone);
       if (local.weekday <= 5 && local.minute >= schedule.openMinute && deadline.getTime() - now.getTime() >= 5_000) {
@@ -54,8 +61,12 @@ export function createScheduler({ store, telegram, delivery, schedule, chatId, c
           }
         } else await publish(day, now);
         const a = day.assignment;
-        if (a && a.day === local.day && local.minute >= schedule.reminderMinute && a.messageId && !a.confirmedAt) {
-          await delivery.deliver(`reminder:${day.day}`, now, async () => {
+        const reminderNow = clock?.() ?? now;
+        const reminderLocal = localTime(reminderNow, schedule.zone);
+        if (a && a.day === reminderLocal.day && reminderLocal.minute >= schedule.reminderMinute && a.messageId && !a.confirmedAt) {
+          await delivery.deliver(`reminder:${day.day}`, reminderNow, async () => {
+            const current = localTime(clock?.() ?? now, schedule.zone);
+            if (a.day !== current.day || current.minute < schedule.reminderMinute) return { kind: 'rejected', code: 409 };
             if (store.get<DayState>(`day:${day.day}`)?.assignment?.confirmedAt) return { kind: 'rejected', code: 409 };
             const link = String(chatId).startsWith('-100') ? `\n\n<a href="https://t.me/c/${String(chatId).slice(4)}/${a.messageId}">Open assignment</a>` : `\nAssignment date: ${day.day}. Open the office group.`;
             return telegram.sendMessage(a.helper.id, `You're on badge duty today, and the check-ins haven't been confirmed yet. Once you're done, tap “I've checked everyone in” on the assignment message in the group.${link}`);

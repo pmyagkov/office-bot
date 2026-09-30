@@ -26,3 +26,14 @@ it('records a blocked private chat without a group fallback', async () => {
   h.mock.failures.clear(); await h.updates.handleUpdate(h.event.command('/today'), at('14:11'));
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('403');
 });
+it('does not send yesterday’s reminder when publication crosses local midnight', async () => {
+  const h = await setup(); let now = new Date('2026-09-30T23:59:50+02:00');
+  const day = h.day(); day.assignment!.messageId = null; h.store.set(`day:${day.day}`, day);
+  h.store.set('op:assignment:2026-09-30', { key: 'assignment:2026-09-30', status: 'prepared' });
+  const original = h.telegram.sendMessage;
+  h.telegram.sendMessage = async (...args) => { if (args[0] === groupId) now = new Date('2026-10-01T00:00:10+02:00'); return original(...args); };
+  const scheduler = createScheduler({ ...h, schedule, chatId: groupId, chooseIndex: () => 0, clock: () => now });
+  await scheduler.tick(now);
+  expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
+  expect(h.store.get('op:reminder:2026-09-30')).toBeUndefined();
+});
