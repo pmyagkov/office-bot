@@ -32,3 +32,11 @@ export function openStore(path: string) {
   };
 }
 export type Store = ReturnType<typeof openStore>;
+
+export function scopedStore(parent: Store, prefix: string): Store {
+  return { ...parent,
+    get: key => parent.get(`${prefix}${key}`),
+    set: (key, value) => parent.set(`${prefix}${key}`, value),
+    list: key => parent.list(`${prefix}${key}`),
+  };
+}

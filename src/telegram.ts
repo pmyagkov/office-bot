@@ -25,11 +25,11 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
       return api.getUpdates({ offset, timeout: timeoutSeconds, limit: 100,
         allowed_updates: ['message', 'poll', 'poll_answer', 'callback_query'] });
     },
-    sendPoll(chatId: number, kind: PollKind, day: DayKey, closesAt: Date): Promise<SendResult<PollSnapshot>> {
+    sendPoll(chatId: number, kind: PollKind, day: DayKey, closesAt: Date, prefix = ''): Promise<SendResult<PollSnapshot>> {
       const question = kind === 'request' ? 'Who needs to be checked in today?' : "Who's coming to the office and can help?";
       const choices = kind === 'request' ? ['I do', 'Not today'] : ["I'm coming and can help", "I can't help today"];
       return send(async () => {
-        const message = await api.sendPoll(chatId, `${question} (${day})`, choices.map(text => ({ text })), {
+        const message = await api.sendPoll(chatId, `${prefix}${question} (${day})`, choices.map(text => ({ text })), {
           is_anonymous: false, allows_multiple_answers: false, allows_revoting: true, type: 'regular',
           close_date: Math.floor(closesAt.getTime() / 1000),
         });

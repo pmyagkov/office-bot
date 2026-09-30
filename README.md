@@ -13,7 +13,19 @@ Monday–Friday, **Europe/Belgrade** (including daylight-saving changes):
 
 **Every potential helper should open the bot privately and press `/start` once.** Telegram otherwise prevents the private reminder. A blocked/failed DM is visible through `/today`; there is no automatic group fallback.
 
-Group commands: `/today`, `/stats` (this week), `/stats month`, `/history`, `/help`. Other groups cannot access the reports. Stats count only confirmations, distinguish duties from check-ins performed/received, and use the assignment's Belgrade date for period filtering. History uses the actual confirmation timestamp. Public holidays are not excluded. These records are self-reports, not readings from access-control hardware.
+Group commands: `/today`, `/stats` (this week), `/stats month`, `/history`, `/test`, `/help`. Other groups cannot access the reports. Stats count only confirmations, distinguish duties from check-ins performed/received, and use the assignment's Belgrade date for period filtering. History uses the actual confirmation timestamp. Public holidays are not excluded. These records are self-reports, not readings from access-control hardware.
+
+## Interactive test in the real group
+
+Send **`/test@altium_office_bot`** (or `/test`) in the configured group. The bot posts an English **[TEST]** control panel mentioning the sender. Only that person can advance or end the run; everyone can vote, and only the selected helper can confirm the assignment.
+
+1. **Open test polls** creates two real Telegram polls, both marked **[TEST]**. Use at least two different people: one votes **I do**, another votes **I'm coming and can help**. The selected helper is excluded from their own recipients.
+2. **Close polls & choose helper** closes both polls, waits for all identified votes and publishes the random assignment with the usual confirmation button.
+3. **Send test reminder** sends the selected helper one private **[TEST]** reminder immediately. The helper must have opened the bot privately and pressed `/start`. A failure such as a blocked DM is shown in the panel. Do this before confirming if you want to test the reminder.
+4. The selected helper presses **I've checked everyone in** on the **[TEST] assignment message**. It changes to a confirmation; the panel then offers **Show test stats**.
+5. **End test** deactivates the run, closes remaining polls and removes its controls. If Telegram cannot update an old message, its buttons still stop working immediately; the panel reports cleanup trouble and a new test can start. A run expires after one hour. Messages remain in the group so participants can inspect them.
+
+Only one test runs at a time. Sending `/test` again points to its panel. Repeated steps do not create duplicate polls, assignments or reminders, including after restart. Delivery uncertainty is shown without automatic resending; unknown polls close at their native one-hour deadline. Test state and statistics are stored separately in SQLite and never affect `/today`, `/stats` or `/history`. The daily schedule continues independently. No votes or confirmations are fabricated.
 
 ## Local setup
 
@@ -34,7 +46,7 @@ The committed example contains no credentials. `.env`, databases, dependencies a
 
 The scenario harness adapts the approach from `squash-bot`: real SQLite and handlers, deterministic synthetic updates, controlled clock and grammY API transformers. Unsupported mock methods fail closed. A separate local HTTP simulator verifies actual grammY requests, 403/429 responses, connection loss and subprocess restart with the same SQLite file. External HTTP requests are blocked in the test process. Fixtures use dummy credentials.
 
-Coverage includes DST, weekends, vote changes/retractions, incomplete vote recovery, authorization, duplicate updates, confirmation/edit failure, statistics and DM suppression. Live Telegram rendering is not tested and no artificial messages are sent to the production group.
+Coverage includes DST, weekends, vote changes/retractions, incomplete vote recovery, authorization, duplicate updates, confirmation/edit failure, statistics, DM suppression and the manual test flow alongside scheduled polls. Automated tests never send messages to the production group. The interactive `/test` command intentionally sends labelled test messages there; live rendering and user interaction can be checked with that command.
 
 ## Persistence and delivery recovery
 
