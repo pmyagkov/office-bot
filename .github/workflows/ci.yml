@@ -1,0 +1,46 @@
+name: CI and deploy
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: office-bot-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build and test the exact runtime image
+        run: docker build --build-arg REVISION="$GITHUB_SHA" -t "office-bot:$GITHUB_SHA" .
+      - name: Container persistence and consistent backup
+        run: bash scripts/container-smoke.sh "office-bot:$GITHUB_SHA"
+      - name: Isolated failed-release rollback
+        run: bash scripts/test-rollback.sh "office-bot:$GITHUB_SHA"
+      - name: Deploy verified main release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/office-bot
+          chmod 600 ~/.ssh/office-bot
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host office-bot-deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/office-bot\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          trap 'rm -f ~/.ssh/office-bot' EXIT
+          DEPLOY_TARGET=office-bot-deploy bash scripts/deploy.sh "$GITHUB_SHA"

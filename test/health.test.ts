@@ -6,6 +6,17 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
+import { run } from '../src/main.js';
+import { loadConfig } from '../src/config.js';
+import { createTelegram } from '../src/telegram.js';
+it('invalidates the previous heartbeat before attempting startup', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'office-startup-')); const heartbeat = join(dir, 'heartbeat.json');
+  writeFileSync(heartbeat, JSON.stringify({ at: Date.now(), pid: process.pid }));
+  const config = loadConfig({ TELEGRAM_BOT_TOKEN: '123456:dummy_dummy_dummy', TELEGRAM_CHAT_ID: '-100123', HEARTBEAT_PATH: heartbeat });
+  const telegram = createTelegram(config.token, { transformer: async () => { throw Error('Unavailable'); } });
+  try { await expect(run(config, telegram)).rejects.toThrow(); expect(existsSync(heartbeat)).toBe(false); }
+  finally { rmSync(dir, { recursive: true }); }
+});
 it('runs the actual loop, reports health, redacts polling errors and shuts down gracefully', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'office-health-')); const server = await fakeServer(); const heartbeat = join(dir, 'heartbeat.json');
   const ok = (result: unknown) => ({ ok: true, result });

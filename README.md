@@ -62,6 +62,27 @@ To restore, stop the bot, preserve the current database and its WAL/SHM files, r
 Health: `npm run health` verifies a recent successful polling/scheduler heartbeat and a live process. No public health endpoint exists. Logs contain lifecycle/error categories, never raw Telegram exceptions or tokens.
 
 ## API references
+## Deployment
+
+The private GitHub repository is `pmyagkov/office-bot`. GitHub Actions checks types, runs all tests on the runner and inside the pinned Docker build, verifies container persistence/backup and exercises a deliberately broken release in an isolated Compose project. Only a successful **main** run receives deployment credentials and deploys. PR runs have no deployment secrets. Concurrent releases are serialized by workflow and host locks.
+
+Images are tagged with the full commit SHA, compressed and transferred over SSH with pinned host keys. The remote script checks the image revision, takes a consistent backup, stops the previous poller, starts the new one and waits for health. A failed replacement is stopped before the previous version starts again. Rollback keeps the current database. A first deployment failure leaves the bot stopped. No registry credentials or public ports are needed.
+
+Production paths (regular `nanoclaw` account):
+
+- `~/services/office-bot/releases/<sha>/` — immutable release files.
+- `~/services/office-bot/current.sha` — last healthy revision.
+- `~/services/office-bot/data/` — SQLite and heartbeat; `data/backups/` contains pre-deploy backups.
+- `/opt/nanoclaw/secrets/office-bot/bot.env` — token/group, mode 0600; directory mode 0700.
+- `/opt/nanoclaw/deploy.lock` — shared host Docker operation lock.
+
+Repository Actions secrets: `DEPLOY_SSH_KEY` (dedicated restricted key), `DEPLOY_KNOWN_HOSTS` (verified host key), `DEPLOY_HOST`, `DEPLOY_USER`. The Telegram token stays only in the server secret file. The container runs as UID/GID 1000, with read-only root, bounded logs/memory and one writable data mount. The SSH key has forwarding/PTY disabled; the deploy account has Docker access.
+
+To inspect, read `current.sha`, then run Compose using the root project directory, that release's `compose.yaml`, project name `office-bot` and `OFFICE_BOT_IMAGE=office-bot:<sha>`. Use `ps`, `logs --tail 50 bot` and `exec -T bot node dist/cli.js health`. Recovery commands must run with the same data mount **after stopping** the polling service. Backups can run with `exec -T bot node dist/cli.js backup /app/data/backups/manual.db`.
+
+Successful deployment retains the current and previous office-bot images, removes transferred image archives and never prunes unrelated Docker resources. Release metadata and backups are retained; periodically archive old backups according to your retention needs. A missing bot heartbeat marks the container unhealthy; Docker restarts exited processes, while a running bot keeps retrying transient Telegram failures. Check health/logs if Telegram remains unavailable.
+
+## API references
 
 - [Telegram Bot API: polls](https://core.telegram.org/bots/api#sendpoll) — absolute closing deadline and non-anonymous answers.
 - [Telegram Bot API: updates](https://core.telegram.org/bots/api#getupdates) — polling offsets and retained updates.

@@ -1,11 +1,13 @@
 import { pathToFileURL } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
+import { rmSync } from 'node:fs';
 import { loadConfig, type Config } from './config.js';
 import { openStore } from './store.js';
 import { createTelegram, type TelegramPort } from './telegram.js';
 import { createRuntime } from './runtime.js';
 
 export async function run(config: Config, telegram: TelegramPort = createTelegram(config.token), clock = () => new Date()): Promise<void> {
+  rmSync(config.heartbeat, { force: true });
   const identity = await telegram.api.getMe();
   const webhook = await telegram.api.getWebhookInfo();
   if (webhook.url) throw Error('A webhook is configured; remove it before starting polling');
