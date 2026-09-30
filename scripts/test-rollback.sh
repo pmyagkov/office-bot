@@ -24,11 +24,11 @@ mkdir -p "$root/data" "$root/releases/$good" "$root/releases/$bad"
 printf 'TELEGRAM_BOT_TOKEN=123456:dummy_dummy_dummy\nTELEGRAM_CHAT_ID=-100123\n' > "$OFFICE_BOT_ENV_FILE"
 for sha in "$good" "$bad"; do cp compose.yaml "$root/releases/$sha/compose.yaml"; done
 docker build --build-arg "BASE_IMAGE=$image" --build-arg "REVISION=$good" -f test/containers/healthy.Dockerfile -t "$OFFICE_BOT_IMAGE_PREFIX:$good" test/containers
-docker build --build-arg "BASE_IMAGE=$image" --build-arg "REVISION=$bad" -f test/containers/broken.Dockerfile -t "$OFFICE_BOT_IMAGE_PREFIX:$bad" test/containers
 docker save "$OFFICE_BOT_IMAGE_PREFIX:$good" | gzip -1 > "$root/releases/$good/image.tar.gz"
-docker save "$OFFICE_BOT_IMAGE_PREFIX:$bad" | gzip -1 > "$root/releases/$bad/image.tar.gz"
 bash scripts/remote-deploy.sh "$good"
 before=$(docker ps --filter "label=com.docker.compose.project=$OFFICE_BOT_PROJECT" --format '{{.ID}}')
+docker build --build-arg "BASE_IMAGE=$image" --build-arg "REVISION=$bad" -f test/containers/broken.Dockerfile -t "$OFFICE_BOT_IMAGE_PREFIX:$bad" test/containers
+docker save "$OFFICE_BOT_IMAGE_PREFIX:$bad" | gzip -1 > "$root/releases/$bad/image.tar.gz"
 if bash scripts/remote-deploy.sh "$bad"; then echo 'Broken release unexpectedly succeeded' >&2; exit 1; fi
 after=$(docker ps --filter "label=com.docker.compose.project=$OFFICE_BOT_PROJECT" --format '{{.ID}}')
 [[ -n "$before" && -n "$after" && "$before" != "$after" ]]
