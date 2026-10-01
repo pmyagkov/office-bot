@@ -25,3 +25,11 @@ it('reopens a command job for a deliberate retry without touching a frozen assig
     expect(store.get('reply:command:30')).toMatchObject({ done: false }); expect(store.get('day:2026-09-30')).toEqual({ assignment: { helper: 11, recipients: [22] } });
   } finally { store.close(); }
 });
+it('reopens a callback reply job for a deliberate retry', () => {
+  const store = openStore(':memory:');
+  try {
+    store.set('op:callback:31:0', { key: 'callback:31:0', status: 'uncertain' }); store.set('reply:callback:31', { key: 'callback:31', done: true });
+    recoverOperation(store, 'callback:31:0', 'retry');
+    expect(store.get('op:callback:31:0')).toMatchObject({ status: 'prepared' }); expect(store.get('reply:callback:31')).toMatchObject({ done: false });
+  } finally { store.close(); }
+});

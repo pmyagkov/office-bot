@@ -24,8 +24,9 @@ export function applySignupPress(store: Store, cb: CallbackQuery, now: Date, bot
   const match = /^signup:(\d{4}-\d{2}-\d{2}):(checkin|duty|discard)$/.exec(cb.data);
   const state = match ? store.get<DayState>(`day:${match[1]}`) : undefined;
   const signup = state?.signup;
+  // `!(now < closesAt)` treats an unparsable deadline as already passed.
   if (!state || !signup || state.phase !== 'open' || !cb.message || cb.message.chat.id !== state.chatId
-    || cb.message.message_id !== signup.messageId || now.getTime() >= Date.parse(signup.closesAt)) return CLOSED;
+    || cb.message.message_id !== signup.messageId || !(now.getTime() < Date.parse(signup.closesAt))) return CLOSED;
   if (cb.from.is_bot) return { text: '' };
   const action = match![2] as Choice | 'discard', id = String(cb.from.id);
   if (action === 'checkin' && !flipper(cb.from.id)) {

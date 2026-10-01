@@ -46,6 +46,6 @@ export async function refreshAssignments(store: Store, telegram: TelegramPort, z
     try {
       await telegram.editMessage(a.chatId, a.messageId, assignmentMessage(a, zone));
       a.rendered = true; store.set(`day:${day.day}`, day);
-    } catch { /* Retry this idempotent edit on the next tick. */ }
+    } catch { console.error(JSON.stringify({ event: 'assignment_edit_failed', day: day.day })); } // Retried on the next tick.
   }
 }

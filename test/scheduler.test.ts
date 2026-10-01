@@ -106,6 +106,14 @@ it('closes an older open day after an outage and publishes it', async () => {
   expect(h.day().assignment?.day).toBe('2026-09-30'); expect(h.calls('sendMessage')).toHaveLength(2);
   expect(h.store.get('day:2026-10-01')).toBeUndefined();
 });
+it('treats an unparsable closesAt as closed: presses are rejected and the next tick closes the day', async () => {
+  const h = setup(); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); h.vote('request', 22);
+  const day = h.day(); day.signup!.closesAt = 'not a date'; h.store.set(`day:${day.day}`, day);
+  expect(h.press('duty', 33)).toEqual({ text: 'Sign-up is closed' });
+  vi.spyOn(console, 'info').mockImplementation(() => {});
+  await h.scheduler.tick(at('09:30'));
+  expect(h.day().phase).toBe('assigned'); expect(h.day().assignment?.helper.id).toBe(11);
+});
 it('reattaches a sign-up message whose successful send was saved just before a crash', async () => {
   const h = setup(); await h.scheduler.tick(at('09:00'));
   const day = h.day(); day.signup!.messageId = null; h.store.set(`day:${day.day}`, day);

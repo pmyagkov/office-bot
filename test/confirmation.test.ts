@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { harness, at } from './helpers/harness.js';
 const instances: ReturnType<typeof harness>[] = [];
 afterEach(() => instances.splice(0).forEach(h => h.store.close()));
@@ -29,7 +29,10 @@ it.each(['actor', 'chat', 'message', 'day', 'malformed'])('rejects the wrong %s 
 });
 it('commits confirmation before an edit failure and retries only the edit', async () => {
   const h = await setup(); h.mock.failures.set('editMessageText', { code: 500 });
-  await h.updates.handleUpdate(h.event.click('2026-09-30', 11, h.day().assignment!.messageId!), at('10:24'));
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {}); let logged: unknown[][];
+  try { await h.updates.handleUpdate(h.event.click('2026-09-30', 11, h.day().assignment!.messageId!), at('10:24')); }
+  finally { logged = [...log.mock.calls]; log.mockRestore(); }
+  expect(logged).toEqual([[JSON.stringify({ event: 'assignment_edit_failed', day: '2026-09-30' })]]);
   expect(h.day().assignment?.confirmedAt).toBe(at('10:24').toISOString()); expect(h.day().assignment?.rendered).toBe(false);
   h.mock.failures.clear(); await h.scheduler.tick(at('10:25')); expect(h.day().assignment?.rendered).toBe(true);
   await h.updates.handleUpdate(h.event.click('2026-09-30', 11, h.day().assignment!.messageId!), at('10:26'));

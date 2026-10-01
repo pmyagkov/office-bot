@@ -88,7 +88,8 @@ it('ends an unfinished test, removes its sign-up buttons and rejects old control
   const h = setup(); await h.step(h.event.command('/test')); const open = h.button('Open test sign-up');
   await h.step(open); const close = h.button('Close & choose helper'); const late = h.press('duty', 11);
   await h.step(h.button('End test'));
-  expect(h.keyboard(h.signup()!)).toEqual([]); expect(h.signup()![1].text).toContain('Test ended');
+  expect(h.keyboard(h.signup()!)).toEqual([]); expect(h.signup()![1].text).toContain('🔒 Sign-up closed\n\nTest ended.');
+  expect(h.signup()![1].text).not.toContain('Sign-up closes at');
   late.update_id = h.event.command('/unused').update_id; await h.step(late);
   expect(h.calls('answerCallbackQuery').at(-1)?.payload.text).toBe('This test has ended. Send /test to start a new one.');
   close.update_id = h.event.command('/unused').update_id; await h.step(close);

@@ -24,7 +24,8 @@ export function createScheduler(services: Services) {
       }
       for (const day of store.list<DayState>('day:')) {
         if (isLegacy(day) || !day.signup) continue;
-        if (day.phase === 'open') { if (now.getTime() >= Date.parse(day.signup.closesAt)) await flow.closeDay(day, now); }
+        // An unparsable deadline counts as passed, so a corrupt day still closes.
+        if (day.phase === 'open') { if (!(now.getTime() < Date.parse(day.signup.closesAt))) await flow.closeDay(day, now); }
         else await flow.publish(day, now);
         const reminderNow = clock?.() ?? now;
         const eligible = () => {

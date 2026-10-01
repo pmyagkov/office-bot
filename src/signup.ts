@@ -21,10 +21,10 @@ function footer(day: DayState, zone: string): string {
   if (day.phase === 'assigned' && day.assignment) return `🔒 Sign-up closed · 🛡 Duty: ${escapeHtml(displayName(day.assignment.helper))}`;
   return '🔒 Sign-up closed';
 }
-export function signupText(day: DayState, zone: string): string {
+export function signupText(day: DayState, zone: string, last = footer(day, zone)): string {
   const entries = Object.values(day.signup?.choices ?? {});
   const by = (choice: Choice) => entries.filter(e => e.choice === choice).map(e => e.user);
-  return [`🏢 Office · ${dayHeader(day.day)}`, section('🙋 Need check-in', by('checkin')), section('🛡 On duty', by('duty')), footer(day, zone)].join('\n\n');
+  return [`🏢 Office · ${dayHeader(day.day)}`, section('🙋 Need check-in', by('checkin')), section('🛡 On duty', by('duty')), last].join('\n\n');
 }
 export function signupKeyboard(day: DayState): InlineKeyboardMarkup {
   if (day.phase !== 'open') return { inline_keyboard: [] };

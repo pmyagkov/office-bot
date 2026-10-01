@@ -156,7 +156,9 @@ export function createTestFlow(services: Services) {
         const signup = day?.signup, a = day?.assignment;
         // Old buttons are inert once the test ends; removing them is best effort, retried while the run has not expired.
         if (signup?.messageId && !s.signupCleaned) {
-          try { await c.telegram.editMessage(chatId, signup.messageId, `${signupText(day!, schedule.zone)}\n\nTest ended.`); s.signupCleaned = true; }
+          // A sign-up still open when the test ends must not keep announcing its closing time.
+          const text = signupText(day!, schedule.zone, day!.phase === 'open' ? '🔒 Sign-up closed' : undefined);
+          try { await c.telegram.editMessage(chatId, signup.messageId, `${text}\n\nTest ended.`); s.signupCleaned = true; }
           catch { /* cleanupPending below keeps retrying. */ }
         }
         if (a?.messageId && !s.assignmentCleaned) {
