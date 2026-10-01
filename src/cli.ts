@@ -33,9 +33,9 @@ async function main() {
     else if (command === 'operations' && (action === 'retry' || action === 'resolve') && key) {
       if (!flags.includes('--verified-in-telegram')) throw Error('Stop the bot, check the actual Telegram messages, then pass --verified-in-telegram');
       const value = (name: string) => { const index = flags.indexOf(name); return index >= 0 ? flags[index + 1] : undefined; };
-      recoverOperation(store, key, action, Number(value('--message-id')), value('--poll-id'));
+      recoverOperation(store, key, action, Number(value('--message-id')));
       console.info('Recovery saved. Restart the bot; the existing assignment is preserved.');
-    } else throw Error('Usage: health | discover | backup <path> | operations list | operations retry|resolve <key> --verified-in-telegram [--message-id N] [--poll-id ID]');
+    } else throw Error('Usage: health | discover | backup <path> | operations list | operations retry|resolve <key> --verified-in-telegram [--message-id N]');
   } finally { store.close(); }
 }
 main().catch(error => {

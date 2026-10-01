@@ -4,12 +4,6 @@ import { fakeServer } from './fake-telegram-server.js';
 const servers: Awaited<ReturnType<typeof fakeServer>>[] = [];
 afterEach(async () => { for (const s of servers.splice(0)) await s.close(); });
 async function setup() { const server = await fakeServer(); servers.push(server); return { server, telegram: createTelegram('123456:dummy_dummy_dummy', { apiRoot: server.apiRoot }) }; }
-it('uses real HTTP for polls with English copy, public votes and a fixed deadline', async () => {
-  const { server, telegram } = await setup();
-  server.responses.push({ ok: true, result: { message_id: 7, poll: { id: 'p1', is_closed: false, total_voter_count: 0, options: [{ voter_count: 0 }, { voter_count: 0 }] } } });
-  expect(await telegram.sendPoll(-100123, 'request', '2026-09-30', new Date('2026-09-30T08:00:00Z'))).toMatchObject({ kind: 'sent', value: { id: 'p1', messageId: 7 } });
-  expect(server.calls[0]).toMatchObject({ method: 'sendPoll', payload: { chat_id: -100123, question: 'Who needs to be checked in today? (2026-09-30)', options: [{ text: 'I do' }, { text: 'Not today' }], is_anonymous: false, allows_multiple_answers: false, close_date: 1790755200 } });
-});
 it('classifies permission errors, flood limits and ambiguous connection loss', async () => {
   const { server, telegram } = await setup();
   server.responses.push({ ok: false, error_code: 403, description: 'Forbidden' }, { ok: false, error_code: 429, description: 'Too many requests', parameters: { retry_after: 30 } }, 'disconnect');
@@ -23,6 +17,38 @@ it('retrieves only required updates and uses safe edits and callback answers', a
   expect(await telegram.getUpdates(100, 0)).toEqual([]);
   server.responses.push({ ok: false, error_code: 400, description: 'Bad Request: message is not modified' }, { ok: true, result: true });
   await telegram.editMessage(-1001, 30, 'Done'); await telegram.answerCallback('click', 'Recorded');
-  expect(server.calls[0].payload).toMatchObject({ offset: 100, allowed_updates: ['message', 'poll', 'poll_answer', 'callback_query'] });
+  expect(server.calls[0].payload).toMatchObject({ offset: 100, allowed_updates: ['message', 'callback_query'] });
   expect(server.calls[1].payload).toMatchObject({ reply_markup: { inline_keyboard: [] }, parse_mode: 'HTML' });
+});
+it('getMemberStatus returns the status, null for an unknown member and throws for other errors', async () => {
+  const { server, telegram } = await setup();
+  server.responses.push({ ok: true, result: { status: 'administrator', user: { id: 1, is_bot: false, first_name: 'A' } } },
+    { ok: false, error_code: 400, description: 'Bad Request: user not found' },
+    { ok: false, error_code: 500, description: 'Internal error at https://api.telegram.org/bot123456:secret' });
+  expect(await telegram.getMemberStatus(-1001, 1)).toBe('administrator');
+  expect(await telegram.getMemberStatus(-1001, 2)).toBeNull();
+  await expect(telegram.getMemberStatus(-1001, 3)).rejects.toThrow(new Error('Unable to read chat member'));
+  expect(server.calls[0]).toMatchObject({ method: 'getChatMember', payload: { chat_id: -1001, user_id: 1 } });
+});
+it('getMemberStatus returns null and logs the code for a permanent 4xx, but throws for flood limits and disconnects', async () => {
+  const { server, telegram } = await setup();
+  const errors: unknown[] = []; const original = console.error; console.error = (...args: unknown[]) => { errors.push(args); };
+  try {
+    server.responses.push({ ok: false, error_code: 400, description: 'Bad Request: member list is inaccessible bot123456:secret' },
+      { ok: false, error_code: 403, description: 'Forbidden: bot was kicked' },
+      { ok: false, error_code: 429, description: 'Too many requests', parameters: { retry_after: 5 } }, 'disconnect');
+    expect(await telegram.getMemberStatus(-1001, 1)).toBeNull();
+    expect(await telegram.getMemberStatus(-1001, 2)).toBeNull();
+    await expect(telegram.getMemberStatus(-1001, 3)).rejects.toThrow(new Error('Unable to read chat member'));
+    await expect(telegram.getMemberStatus(-1001, 4)).rejects.toThrow(new Error('Unable to read chat member'));
+  } finally { console.error = original; }
+  expect(errors).toEqual([[JSON.stringify({ event: 'member_lookup_failed', code: 400 })], [JSON.stringify({ event: 'member_lookup_failed', code: 403 })]]);
+  expect(JSON.stringify(errors)).not.toMatch(/inaccessible|secret|kicked/);
+});
+it('answers callbacks with an optional url', async () => {
+  const { server, telegram } = await setup();
+  await telegram.answerCallback('click', 'Open', 'https://t.me/office_test_bot?start=x');
+  await telegram.answerCallback('click', 'Recorded');
+  expect(server.calls[0].payload).toMatchObject({ callback_query_id: 'click', text: 'Open', url: 'https://t.me/office_test_bot?start=x' });
+  expect(server.calls[1].payload).not.toHaveProperty('url');
 });

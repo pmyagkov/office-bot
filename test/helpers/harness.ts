@@ -1,9 +1,11 @@
 import { createDelivery } from '../../src/delivery.js';
+import { getFlipperName, setFlipperName } from '../../src/flipper.js';
+import { applySignupPress } from '../../src/input-state.js';
 import { createScheduler } from '../../src/scheduler.js';
 import { openStore } from '../../src/store.js';
 import { createTelegram } from '../../src/telegram.js';
-import { applyPollUpdate, createUpdates } from '../../src/updates.js';
-import type { DayState, PollKind } from '../../src/types.js';
+import { createUpdates } from '../../src/updates.js';
+import type { Choice, DayState } from '../../src/types.js';
 import { events, groupId } from '../fixtures/telegram-updates.js';
 import { mockTelegram } from '../mocks/telegram.js';
 export const schedule = { zone: 'Europe/Belgrade', openMinute: 540, closeMinute: 600, reminderMinute: 840 };
@@ -12,17 +14,23 @@ export function harness(path = ':memory:', chooseIndex = (_size: number) => 0) {
   const store = openStore(path); const mock = mockTelegram(); const event = events();
   const telegram = createTelegram('123456:dummy_dummy_dummy', { transformer: mock.transformer });
   const delivery = createDelivery(store);
-  const scheduler = createScheduler({ store, telegram, delivery, schedule, chooseIndex, chatId: groupId });
-  const updates = createUpdates({ store, telegram, delivery, schedule, chatId: groupId, username: 'office_test_bot' });
+  const username = 'office_test_bot';
+  const flipperNames = (id: number) => getFlipperName(store, id);
+  const scheduler = createScheduler({ store, telegram, delivery, schedule, chooseIndex, chatId: groupId, flipperNames, username });
+  const updates = createUpdates({ store, telegram, delivery, schedule, chatId: groupId, username, flipperNames });
   const day = () => store.get<DayState>('day:2026-09-30')!;
   const calls = (method: string) => mock.calls.filter(c => c.method === method);
-  function vote(kind: PollKind, id: number, option: number | null = 0, name?: string) {
-    applyPollUpdate(store, event.vote(day().polls[kind]!.id, id, option, name));
-    const state = day().polls[kind]!;
-    const remote = mock.polls.get(state.messageId)!;
-    remote.options.forEach((o, i) => { o.voter_count = Object.values(state.votes).filter(v => v.option === i).length; });
-    remote.total_voter_count = remote.options.reduce((sum, o) => sum + o.voter_count, 0);
+  const register = (id: number, flipper = `F${id}`) => setFlipperName(store, id, flipper, id, at('09:00'));
+  function press(action: Choice | 'discard', id: number, name?: string) {
+    const cb = event.press('2026-09-30', action, id, day().signup!.messageId!, name).callback_query!;
+    return applySignupPress(store, cb, at('09:30'), username, flipperNames);
   }
-  async function close() { await scheduler.tick(at('10:00')); await scheduler.finishClosing(at('10:00')); }
-  return { store, mock, event, telegram, delivery, scheduler, updates, day, calls, vote, close };
+  // Compatibility with the poll-era scenarios: a "request" is a check-in, a "helper" is on duty.
+  function vote(kind: 'request' | 'helper', id: number, option: number | null = 0, name?: string) {
+    if (option !== 0) return press('discard', id, name);
+    if (kind === 'request' && !flipperNames(id)) register(id);
+    return press(kind === 'request' ? 'checkin' : 'duty', id, name);
+  }
+  async function close() { await scheduler.tick(at('10:00')); }
+  return { store, mock, event, telegram, delivery, scheduler, updates, day, calls, flipperNames, register, press, vote, close };
 }

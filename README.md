@@ -1,100 +1,56 @@
 # Office Bot
 
-Telegram group coordination with persistent polls, random badge duty, self-reported confirmations and statistics. All Telegram content is English. Runs as one long-polling process with SQLite; no public port is needed.
+Telegram bot for an office group: daily sign-up for badge check-ins, fair rotation of who helps, self-reported confirmations and statistics. One long-polling Node process with SQLite; no public port. All Telegram text is English.
 
 ## Daily flow
 
-Monday–Friday, **Europe/Belgrade** (including daylight-saving changes):
+Monday–Friday, Europe/Belgrade:
 
-- **09:00:** two non-anonymous, single-choice polls: who needs a check-in and who can help.
-- **10:00:** Telegram closes both polls. The bot drains queued updates, reconciles identified votes against final totals and chooses one helper uniformly at random. The selected helper is excluded from their own recipients. Names and recipients are frozen before publishing.
-- **Confirmation:** only the selected helper can press **I've checked everyone in** on the original group message. The bot records one duty and the individual helper → recipient → confirmation-time relationships, edits the message and removes its button.
-- **14:00:** one private reminder if still unconfirmed. It can be recovered later the same day, but not on a later date.
+- **09:00** — one sign-up message with **🙋 Check me in**, **🛡 On duty** and **❌ Discard**. The choices exclude each other, and the message is edited in place after every press.
+- **10:00** — the bot closes sign-up itself, removes the buttons and draws a helper from those on duty. If nobody needs a check-in or nobody is on duty, the same message says so.
+- **Assignment** — a new message tags the helper and lists, by **Flipper name**, who to check in. The helper presses **I've checked everyone in**; the same message gets `✅ Confirmed HH:MM`.
+- **14:00** — one private reminder if the helper has not confirmed.
 
-**Every potential helper should open the bot privately and press `/start` once.** Telegram otherwise prevents the private reminder. A blocked/failed DM is visible through `/today`; there is no automatic group fallback.
+**Fair share:** each past day with a draw (last 60 days) gives every volunteer on duty `+1/N` credit and the chosen helper `−1`. The highest balance wins; exact ties are random. Someone who volunteers rarely is not picked more often per attendance than someone who volunteers daily.
 
-Group commands: `/today`, `/stats` (this week), `/stats month`, `/history`, `/test`, `/help`. Other groups cannot access the reports. Stats count only confirmations, distinguish duties from check-ins performed/received, and use the assignment's Belgrade date for period filtering. History uses the actual confirmation timestamp. Public holidays are not excluded. These records are self-reports, not readings from access-control hardware.
+## Registration
 
-## Interactive test in the real group
+The helper looks people up in the badge system (Flipper), so everyone who presses **Check me in** registers their Flipper name once: pressing the button without one opens the bot's private chat (or send `/start flipper`, later `/flipper` to change it). **On duty** and **Discard** need no name. Everyone should also press `/start` in the private chat once, otherwise Telegram blocks the reminder.
 
-Send **`/test@altium_office_bot`** (or `/test`) in the configured group. The bot posts an English **[TEST]** control panel mentioning the sender. Only that person can advance or end the run; everyone can vote, and only the selected helper can confirm the assignment.
+Group admins register names for others: `/admin` in the private chat lists their commands, `/admin flipper` starts a loop of **Choose person** → name until **Finish**.
 
-1. **Open test polls** creates two real Telegram polls, both marked **[TEST]**. Use at least two different people: one votes **I do**, another votes **I'm coming and can help**. The selected helper is excluded from their own recipients.
-2. **Close polls & choose helper** closes both polls, waits for all identified votes and publishes the random assignment with the usual confirmation button.
-3. **Send test reminder** sends the selected helper one private **[TEST]** reminder immediately. The helper must have opened the bot privately and pressed `/start`. A failure such as a blocked DM is shown in the panel. Do this before confirming if you want to test the reminder.
-4. The selected helper presses **I've checked everyone in** on the **[TEST] assignment message**. It changes to a confirmation; the panel then offers **Show test stats**.
-5. **End test** deactivates the run, closes remaining polls and removes its controls. If Telegram cannot update an old message, its buttons still stop working immediately; the panel reports cleanup trouble and a new test can start. A run expires after one hour. Messages remain in the group so participants can inspect them.
+## Commands
 
-Only one test runs at a time. Sending `/test` again points to its panel. Repeated steps do not create duplicate polls, assignments or reminders, including after restart. Delivery uncertainty is shown without automatic resending; unknown polls close at their native one-hour deadline. Test state and statistics are stored separately in SQLite and never affect `/today`, `/stats` or `/history`. The daily schedule continues independently. No votes or confirmations are fabricated.
+- Group: `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, `/help`.
+- Private chat: `/start`, `/flipper`, `/cancel`, `/admin` (group admins only).
+
+Stats count confirmed duties only, by the assignment's Belgrade date. The records are self-reports, not readings from access-control hardware.
+
+## Try it in the real group
+
+`/test` posts a **[TEST]** control panel that walks through sign-up, closing, the reminder, confirmation and stats with labelled messages. Only the starter controls it, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
 
 ## Local setup
 
-Use Node **22.22.3** (see `.nvmrc`).
+Node **22.22.3** (`.nvmrc`).
 
-1. Create a bot with **@BotFather → /newbot**. Keep its token private.
-2. Copy `.env.example` to `.env`, put the token there and restrict it: `chmod 600 .env`.
-3. Add the bot to the intended group; grant permission to send messages and polls. Administrator status is simplest. Privacy mode can remain enabled: polls, callbacks and explicit bot commands are delivered.
-4. Run `npm ci`, then `npm run build`.
-5. With all other bot processes stopped, run `npm run discover`, then send `/setup@your_bot_username` in the intended group. Save the reported ID as `TELEGRAM_CHAT_ID`.
-6. Start with `npm start`. Never run two pollers for the same token.
+1. Create a bot with **@BotFather → /newbot**; keep the token private.
+2. `cp .env.example .env`, put the token there, `chmod 600 .env`.
+3. Add the bot to the group with permission to send and edit messages (administrator is simplest). Privacy mode can stay on.
+4. `npm ci`, `npm run build`.
+5. With every other bot process stopped, run `npm run discover` and send `/setup@your_bot_username` in the group; save the reported ID as `TELEGRAM_CHAT_ID`.
+6. `npm start`. Never run two pollers for the same token.
 
-The committed example contains no credentials. `.env`, databases, dependencies and design notes are ignored. Production can supply environment variables directly and run `node dist/main.js`.
+## Tests
 
-## Verification without a test Telegram group
+`npm run typecheck` and `npm test` (builds first) run locally and in CI. Scenario tests use real SQLite and handlers, synthetic updates, a controlled clock and a mocked grammY boundary; a local HTTP simulator covers real requests, 403/429, connection loss and process restarts. Tests never read `.env` or contact Telegram.
 
-`npm run typecheck` and `npm test` run locally and in CI. Tests build the production code first. They never read `.env` or contact Telegram.
+## Operations
 
-The scenario harness adapts the approach from `squash-bot`: real SQLite and handlers, deterministic synthetic updates, controlled clock and grammY API transformers. Unsupported mock methods fail closed. A separate local HTTP simulator verifies actual grammY requests, 403/429 responses, connection loss and subprocess restart with the same SQLite file. External HTTP requests are blocked in the test process. Fixtures use dummy credentials.
+State lives in SQLite (WAL). A completed draw is frozen: never edit rows to reroll it. `npm run backup -- /abs/path.db` works while the bot runs; `npm run health` checks the heartbeat.
 
-Coverage includes DST, weekends, vote changes/retractions, incomplete vote recovery, authorization, duplicate updates, confirmation/edit failure, statistics, DM suppression and the manual test flow alongside scheduled polls. Automated tests never send messages to the production group. The interactive `/test` command intentionally sends labelled test messages there; live rendering and user interaction can be checked with that command.
-
-## Persistence and delivery recovery
-
-The database contains versioned per-day snapshots, unique operation records, reply jobs and the incoming cursor. Incoming changes and cursor advancement commit in one SQLite transaction (WAL, FULL synchronous). A completed assignment snapshot represents one duty plus one relationship per frozen recipient. Never edit database rows manually to reroll a draw.
-
-Telegram does **not** offer idempotency keys for new messages. Before sending, the bot persists an operation. Confirmed sends reuse their saved result. A connection failure or crash during sending becomes **uncertain**, never a blind automatic resend. Explicit 429 rejections retry after Telegram's delay. Permanent rejections remain visible. Edits can safely retry. Missing final votes block selection until the stored ballots match both closed polls. Telegram retains updates for a limited time; lost voter identities cannot be recovered from totals.
-
-If a send is unresolved:
-
-1. Run `npm run operations -- list` to identify its key, for example `assignment:2026-09-30`.
-2. **Stop the polling process**, take a backup and inspect the actual group/DM history.
-3. If the message exists, record its ID: `npm run operations -- resolve assignment:2026-09-30 --message-id 42 --verified-in-telegram`.
-4. A poll also requires `--poll-id ID`. Obtain its poll ID from a forwarded original poll/update; resolving it restores its identity, not missing votes. The bot still verifies final counts.
-5. Only if the message definitely does **not** exist, use `npm run operations -- retry KEY --verified-in-telegram`.
-6. Restart. The frozen draw remains unchanged. Expired polls and previous-day reminders are not newly sent.
-
-Do not resolve/retry a send while the process is running. The flag is an operator acknowledgement of checking Telegram, not a delivery guarantee. A missing/ambiguous assignment has no working confirmation until its message ID is reconciled. Oversized recipient lists are shortened in the assignment preview and available in full via `/today`; stats/history are bounded, with complete records retained in SQLite.
-
-## Backup and restore
-
-Create a consistent SQLite backup with `npm run backup -- /absolute/path/office-backup.db`; this works while the bot is running. Protect backups like the live database: they contain names and attendance-related records.
-
-To restore, stop the bot, preserve the current database and its WAL/SHM files, replace the database with the chosen backup, remove only the old database's WAL/SHM files, and restart. Restoring an old backup can lose acknowledged updates or delivery results: reconcile messages already sent since that backup **before** allowing the bot to publish again. Application rollback normally keeps the current database and does not restore an old snapshot.
-
-Health: `npm run health` verifies a recent successful polling/scheduler heartbeat and a live process. No public health endpoint exists. Logs contain lifecycle/error categories, never raw Telegram exceptions or tokens.
-
-## Deployment
-
-The private GitHub repository is `pmyagkov/office-bot`. GitHub Actions checks types, runs all tests on the runner and inside the pinned Docker build, verifies container persistence/backup and exercises a deliberately broken release in an isolated Compose project. Only a successful **main** run receives deployment credentials and deploys. PR runs have no deployment secrets. Concurrent releases are serialized by workflow and host locks.
-
-Images are tagged with the full commit SHA, compressed and transferred over SSH with pinned host keys. The remote script checks the image revision, takes a consistent backup, stops the previous poller, starts the new one and waits for health. A failed replacement is stopped before the previous version starts again. Rollback keeps the current database. A first deployment failure leaves the bot stopped. No registry credentials or public ports are needed.
-
-Production paths (regular `nanoclaw` account):
-
-- `~/services/office-bot/releases/<sha>/` — immutable release files.
-- `~/services/office-bot/current.sha` — last healthy revision.
-- `~/services/office-bot/data/` — SQLite and heartbeat; `data/backups/` contains pre-deploy backups.
-- `/opt/nanoclaw/secrets/office-bot/bot.env` — token/group, mode 0600; directory mode 0700.
-- `/opt/nanoclaw/deploy.lock` — shared host Docker operation lock.
-
-Repository Actions secrets: `DEPLOY_SSH_KEY` (dedicated restricted key), `DEPLOY_KNOWN_HOSTS` (verified host key), `DEPLOY_HOST`, `DEPLOY_USER`. The Telegram token stays only in the server secret file. The container runs as UID/GID 1000, with read-only root, bounded logs/memory and one writable data mount. The SSH key has forwarding/PTY disabled; the deploy account has Docker access.
-
-To inspect, read `current.sha`, then run Compose using the root project directory, that release's `compose.yaml`, project name `office-bot` and `OFFICE_BOT_IMAGE=office-bot:<sha>`. Use `ps`, `logs --tail 50 bot` and `exec -T bot node dist/cli.js health`. Recovery commands must run with the same data mount **after stopping** the polling service. Backups can run with `exec -T bot node dist/cli.js backup /app/data/backups/manual.db`.
-
-Successful deployment retains the current and previous office-bot images, removes transferred image archives and never prunes unrelated Docker resources. Release metadata and backups are retained; periodically archive old backups according to your retention needs. A missing bot heartbeat marks the container unhealthy; Docker restarts exited processes, while a running bot keeps retrying transient Telegram failures. Check health/logs if Telegram remains unavailable.
+Everything else is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): deployment, logs, the step-by-step recovery of an ambiguous (`uncertain`) send with `npm run operations`, backup and restore, rollback (unsafe once a sign-up day exists) and production paths. Pushes to **main** deploy through GitHub Actions after types, tests and a container rollback check pass.
 
 ## API references
 
-- [Telegram Bot API: polls](https://core.telegram.org/bots/api#sendpoll) — absolute closing deadline and non-anonymous answers.
-- [Telegram Bot API: updates](https://core.telegram.org/bots/api#getupdates) — polling offsets and retained updates.
-- [grammY API transformers](https://grammy.dev/advanced/transformers) — the mocked boundary used in scenario tests.
+- [Inline keyboards](https://core.telegram.org/bots/api#inlinekeyboardmarkup) · [KeyboardButtonRequestUsers](https://core.telegram.org/bots/api#keyboardbuttonrequestusers) · [getUpdates](https://core.telegram.org/bots/api#getupdates) · [grammY transformers](https://grammy.dev/advanced/transformers)
