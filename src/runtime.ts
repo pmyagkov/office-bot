@@ -28,7 +28,6 @@ export function createRuntime(config: Config, store: Store, telegram: TelegramPo
       await drain(timeout); // Commit queued confirmations before considering reminders.
       await scheduler.tick(clock());
       await updates.flushTestFlow(clock());
-      await updates.flushTestFlow(clock(), true);
       await updates.flushReplies(clock());
       if (config.heartbeat) {
         mkdirSync(dirname(config.heartbeat), { recursive: true, mode: 0o700 });

@@ -52,9 +52,8 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       } else if (cb?.data?.startsWith('admin:')) facts.admin = await isAdmin(cb.from.id);
       let answer: PressResult | undefined;
       store.atomic(() => {
-        const testText = tests.apply(update, now);
-        if (testText !== undefined) answer = { text: testText };
-        else if (cb) {
+        answer = tests.apply(update, now);
+        if (!answer && cb) {
           answer = applySignupPress(store, cb, now, username, flipperNames);
           if (!answer) {
             const result = handlePrivateCallback(store, cb, now, facts);
@@ -92,7 +91,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       if (update.callback_query && answer) await telegram.answerCallback(update.callback_query.id, answer.text, answer.url);
       await refreshSignups(store, telegram, schedule.zone);
       await refreshAssignments(store, telegram, schedule.zone);
-      await tests.flush(now);
+      // The test flow is flushed once per runtime step, after the whole batch is committed.
       await flushReplies(now);
     },
   };

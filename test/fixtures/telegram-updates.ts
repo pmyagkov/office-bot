@@ -4,9 +4,6 @@ export const user = (id: number, name = `Person ${id}`): User => ({ id, first_na
 export function events() {
   let next = 1;
   return {
-    vote(pollId: string, id: number, option: number | null, name?: string): Update {
-      return { update_id: next++, poll_answer: { poll_id: pollId, user: user(id, name), option_ids: option === null ? [] : [option], option_persistent_ids: option === null ? [] : [String(option)] } };
-    },
     command(text: string, chatId = groupId, actor = 11): Update {
       return { update_id: next++, message: { message_id: next, date: 1790751600, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, from: user(actor), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } };
     },

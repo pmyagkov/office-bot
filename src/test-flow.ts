@@ -4,16 +4,17 @@ import type { DayState, Operation, Participant } from './types.js';
 import { scopedStore } from './store.js';
 import { createDelivery } from './delivery.js';
 import { createFlow } from './flow.js';
-import { confirmAssignment } from './input-state.js';
+import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { assignmentMessage, mention, refreshAssignments } from './messages.js';
+import { refreshSignups, signupText } from './signup.js';
 import { localTime } from './clock.js';
 import { renderStats } from './reports.js';
 
 export type TestSession = {
   id: string; day: string; owner: Participant; expiresAt: string;
-  stage: 'ready' | 'opening' | 'voting' | 'closing' | 'result' | 'ending' | 'ended';
+  stage: 'ready' | 'opening' | 'signup' | 'closing' | 'result' | 'ending' | 'ended';
   panelId?: number; panelRender?: string; reminderRequested?: boolean; statsRequested?: boolean;
-  assignmentCleaned?: boolean; cleanupPending?: boolean; panelAbandoned?: boolean;
+  signupCleaned?: boolean; assignmentCleaned?: boolean; cleanupPending?: boolean; panelAbandoned?: boolean;
 };
 
 export function createTestFlow(services: Services) {
@@ -24,7 +25,8 @@ export function createTestFlow(services: Services) {
   function makeContext(s: TestSession) {
     const scoped = scopedStore(store, `test:${s.id}:`);
     const delivery = createDelivery(scoped);
-    const keyboard = (value?: InlineKeyboardMarkup): InlineKeyboardMarkup | undefined => value && ({ inline_keyboard: value.inline_keyboard.map(row => row.map(b => 'callback_data' in b && b.callback_data.startsWith('done:') ? { ...b, callback_data: `testdone:${s.id}:${b.callback_data.slice(5)}` } : b)) });
+    const rewrite = (data: string) => /^(done|signup):/.test(data) ? `test${data.replace(':', `:${s.id}:`)}` : data;
+    const keyboard = (value?: InlineKeyboardMarkup): InlineKeyboardMarkup | undefined => value && ({ inline_keyboard: value.inline_keyboard.map(row => row.map(b => 'callback_data' in b ? { ...b, callback_data: rewrite(b.callback_data) } : b)) });
     const text = (value: string) => `[TEST] ${value.replaceAll('/today', '/test')}`;
     const port = { ...telegram,
       sendMessage: (to: number, value: string, buttons?: InlineKeyboardMarkup) => telegram.sendMessage(to, text(value), keyboard(buttons)),
@@ -58,22 +60,25 @@ export function createTestFlow(services: Services) {
       if (!s.panelId && op?.status === 'sent' && op.value) { s.panelId = op.value; save(s); }
     }
   }
-  function apply(update: Update, now: Date): string | undefined {
+  function apply(update: Update, now: Date): PressResult | undefined {
     const cb = update.callback_query;
-    if (!cb || !/^(test|testdone):/.test(cb.data ?? '')) return;
-    const match = /^(test|testdone):([a-z0-9]+):(.+)$/.exec(cb.data ?? '');
+    if (!cb || !/^(test|testdone|testsignup):/.test(cb.data ?? '')) return;
+    const match = /^(test|testdone|testsignup):([a-z0-9]+):(.+)$/.exec(cb.data ?? '');
     const s = match ? store.get<TestSession>(`test-session:${match[2]}`) : undefined;
-    if (!s || ['ending', 'ended'].includes(s.stage) || expired(s, now)) return 'This test has ended. Send /test to start a new one.';
-    if (match![1] === 'testdone') return confirmAssignment(context(s).store, { ...cb, data: `done:${match![3]}` }, now);
-    if (cb.from.id !== s.owner.id || cb.message?.chat.id !== chatId || cb.message.message_id !== s.panelId) return 'Only the test starter can use these controls on the original panel.';
+    const text = (value = '') => ({ text: value });
+    if (!s || ['ending', 'ended'].includes(s.stage) || expired(s, now)) return text('This test has ended. Send /test to start a new one.');
+    if (match![1] === 'testdone') return text(confirmAssignment(context(s).store, { ...cb, data: `done:${match![3]}` }, now));
+    // Days and fair-share history stay in the scoped store; Flipper names come from the real registry.
+    if (match![1] === 'testsignup') return applySignupPress(context(s).store, { ...cb, data: `signup:${match![3]}` }, now, services.username ?? '', services.flipperNames);
+    if (cb.from.id !== s.owner.id || cb.message?.chat.id !== chatId || cb.message.message_id !== s.panelId) return text('Only the test starter can use these controls on the original panel.');
     const action = match![3]; const day = state(s);
     if (action === 'end') s.stage = 'ending';
     else if (action === 'open' && s.stage === 'ready') s.stage = 'opening';
-    else if (action === 'close' && s.stage === 'voting') s.stage = 'closing';
+    else if (action === 'close' && s.stage === 'signup') s.stage = 'closing';
     else if (action === 'remind' && s.stage === 'result' && day?.assignment?.messageId && !day.assignment.confirmedAt && !s.reminderRequested) s.reminderRequested = true;
     else if (action === 'stats' && day?.assignment?.confirmedAt && !s.statsRequested) s.statsRequested = true;
-    else return 'This step is already complete or is not available yet.';
-    save(s); return 'Test step requested.';
+    else return text('This step is already complete or is not available yet.');
+    save(s); return text('Test step requested.');
   }
   function panel(s: TestSession) {
     const c = context(s); const day = state(s); const a = day?.assignment;
@@ -81,10 +86,10 @@ export function createTestFlow(services: Services) {
     const button = (text: string, action: string) => rows.push([{ text, callback_data: `test:${s.id}:${action}` }]);
     let status: string;
     switch (s.stage) {
-      case 'ready': status = 'Ready. Open the two polls, then ask participants to vote. Use two different people: one requesting a check-in, one volunteering to help.'; button('Open test polls', 'open'); break;
-      case 'opening': status = 'Opening test polls…'; break;
-      case 'voting': status = 'Polls are open. After everyone votes, close them to draw a helper.'; button('Close polls & choose helper', 'close'); break;
-      case 'closing': status = 'Closing polls and waiting for all identified votes…'; break;
+      case 'ready': status = 'Ready. Open the test sign-up, then ask participants to press its buttons. Use two different people: one pressing “Check me in” (a Flipper name is required), one pressing “On duty”.'; button('Open test sign-up', 'open'); break;
+      case 'opening': status = 'Opening the test sign-up…'; break;
+      case 'signup': status = 'The test sign-up is open. After everyone has signed up, close it to draw a helper.'; button('Close & choose helper', 'close'); break;
+      case 'closing': status = 'Closing the test sign-up and choosing a helper…'; break;
       case 'result':
         status = a?.confirmedAt ? 'Check-ins confirmed. View the test statistics, then end the test.' : a ? `Selected helper: ${mention(a.helper)}. Send the test reminder before the helper confirms using “I\'ve checked everyone in” on the assignment message.` : day?.phase === 'empty' ? 'No check-ins needed. Start another test with a different requester and helper.' : 'Nobody volunteered. End this test and try again.';
         if (a?.messageId && !a.confirmedAt && !s.reminderRequested) button('Send test reminder', 'remind');
@@ -101,8 +106,8 @@ export function createTestFlow(services: Services) {
       else status += `\nPrivate reminder failed (${reminder.code}). The helper must open the bot privately and press /start; then try a new test.`;
     }
     const failures = c.store.list<Operation>('op:').filter(op => op.status === 'uncertain' || (op.status === 'rejected' && op.code !== 429 && !op.key.startsWith('reminder:')));
-    if (failures.length) status += '\nA Telegram delivery failed or its result is unknown. It will not be resent blindly. End this test; any untracked poll expires automatically.';
-    if (s.cleanupPending) status += '\nSome old messages could not be updated. This test is inactive; old buttons no longer work and its polls expire automatically.';
+    if (failures.length) status += '\nA Telegram delivery failed or its result is unknown. It will not be resent blindly. End this test; its buttons stop working once it ends.';
+    if (s.cleanupPending) status += '\nSome old messages could not be updated. This test is inactive; old buttons no longer work.';
     if (!['ending', 'ended'].includes(s.stage)) button('End test', 'end');
     return { text: `<b>Test flow</b> — ${mention(s.owner)}\n\n${status}\n\nAll test records are separate from normal statistics. Only the starter controls the steps. The selected helper confirms. Private reminders require /start. This run expires after one hour.`, keyboard: { inline_keyboard: rows } };
   }
@@ -121,7 +126,8 @@ export function createTestFlow(services: Services) {
       }
     }
   }
-  async function flush(now: Date, finalize = false) {
+  // Called once per runtime step, after every queued update is committed, so a queued confirmation suppresses the reminder.
+  async function flush(now: Date) {
     restoreDeliveries();
     for (const s of sessions()) {
       const c = context(s);
@@ -130,28 +136,34 @@ export function createTestFlow(services: Services) {
         if (Date.parse(s.expiresAt) - now.getTime() < 5_000) { s.stage = 'ending'; save(s); }
         else {
           await c.flow.openDay(s.day, new Date(s.expiresAt), now);
-          if (state(s)?.signup?.messageId) { s.stage = 'voting'; save(s); }
+          if (state(s)?.signup?.messageId) { s.stage = 'signup'; save(s); }
         }
       }
-      let day = state(s);
-      if (s.stage === 'closing' && day) {
-        if (day.phase === 'open') await c.flow.closeDay(day, now);
-        day = state(s)!;
-        if (['assigned', 'empty', 'no_helpers'].includes(day.phase)) { s.stage = 'result'; save(s); }
+      if (s.stage === 'closing') {
+        const day = state(s);
+        if (day) await c.flow.closeDay(day, now); // Freezes the outcome before any request; publish retries below.
+        s.stage = 'result'; save(s);
       }
+      if (!['ending', 'ended'].includes(s.stage)) await refreshSignups(c.store, c.telegram, schedule.zone);
+      const day = state(s);
       if (s.stage === 'result' && day) {
         await c.flow.publish(day, now);
-        if (finalize && s.reminderRequested) await c.flow.remind(day, now, () => !expired(s, services.clock?.() ?? now));
+        if (s.reminderRequested) await c.flow.remind(day, now, () => !expired(s, services.clock?.() ?? now));
         await refreshAssignments(c.store, c.telegram, schedule.zone);
         if (s.statsRequested) await c.delivery.deliver('stats', now, () => c.telegram.sendMessage(chatId, renderStats(c.store, s.day, 'week')));
       }
       if (s.stage === 'ending' || (s.stage === 'ended' && s.cleanupPending && !expired(s, now))) {
-        const a = day?.assignment;
+        const signup = day?.signup, a = day?.assignment;
+        // Old buttons are inert once the test ends; removing them is best effort, retried while the run has not expired.
+        if (signup?.messageId && !s.signupCleaned) {
+          try { await c.telegram.editMessage(chatId, signup.messageId, `${signupText(day!, schedule.zone)}\n\nTest ended.`); s.signupCleaned = true; }
+          catch { /* cleanupPending below keeps retrying. */ }
+        }
         if (a?.messageId && !s.assignmentCleaned) {
           try { await c.telegram.editMessage(chatId, a.messageId, `${assignmentMessage(a, schedule.zone)}\n\nTest ended.`); s.assignmentCleaned = true; }
           catch { /* The test is inactive even if Telegram cannot remove its old button. */ }
         }
-        s.cleanupPending = !!(a?.messageId && !s.assignmentCleaned);
+        s.cleanupPending = !!((signup?.messageId && !s.signupCleaned) || (a?.messageId && !s.assignmentCleaned));
         s.stage = 'ended'; save(s);
       }
       await render(s, now);
