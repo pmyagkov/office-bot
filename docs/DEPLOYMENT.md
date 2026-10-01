@@ -96,7 +96,8 @@ Logs are intentionally sparse: lifecycle events and error categories, never raw 
 - `{"event":"iteration_failed",…}` when Telegram or the database was unavailable; the loop retries after 2 s.
 - `{"event":"stopped"}` on SIGTERM/SIGINT.
 - `{"event":"day_closed","day":"<YYYY-MM-DD>","phase":"<phase>","requests":<n>,"onDuty":<n>,"helper":<user id or null>}` once when the bot closes sign-up at 10:00 (also for `[TEST]` runs, which close on the starter's command). `phase` is `assigned`, `empty` (no check-in requests) or `no_helpers` (requests but nobody on duty); `requests` is the number of people who pressed Check me in, `onDuty` the number on duty and `helper` the Telegram user id of the drawn helper (`null` unless `assigned`). **The absence of this line for a working day means sign-up never closed.**
-- `{"event":"signup_edit_failed","day":"<YYYY-MM-DD>"}` (stderr) when editing the sign-up message failed. The bot retries on the next tick, so a few are harmless; a steady stream means Telegram rejects the edit (message deleted, bot removed from the group, rate limits).
+- `{"event":"signup_edit_failed","day":"<YYYY-MM-DD>"}` (stderr) when editing the sign-up message failed. The bot retries on the next tick, so a few are harmless; a steady stream means Telegram rejects the edit (message deleted, bot removed from the group, rate limits). `{"event":"assignment_edit_failed","day":"<YYYY-MM-DD>"}` is the same for the confirmation edit of the assignment message.
+- `{"event":"member_lookup_failed","code":<n>}` (stderr) when Telegram permanently refused a group-membership lookup in the admin dialog (for example `400` or `403`); the person is answered "Not available." and the update is consumed. Temporary failures (connection loss, `429`, `5xx`) instead show as `iteration_failed` and are retried; the daily sign-up, close and reminder still run in the meantime, but the heartbeat is not refreshed until the update succeeds.
 
 Sign-up is **one Telegram message edited in place**: pressing a button rewrites its text, and closing at 10:00 removes the buttons and puts the outcome in its footer. The assignment is a separate, second message (also edited in place on confirmation). Failed sends and edits are not raw-logged; read the state to see them:
 
@@ -122,6 +123,7 @@ The release that replaced the two polls with the button sign-up needs these step
 - **Deploy before 09:00 on a working day** (next: Friday 2026-10-02). Deploying mid-day leaves that day's earlier state as it is: a day created by the old poll flow (it has a `polls` field) is **skipped** by the new code. It is never reopened, closed, edited or reminded, and no sign-up is posted for it; its assignment, if any, still counts for `/stats` and `/history`. The 2026-10-01 day stays `incomplete`, which is acceptable.
 - **Everyone must register their Flipper name once** before pressing Check me in: themselves with `/start flipper` (later `/flipper`) in the private chat with the bot, or a group administrator with `/admin flipper`. This includes the people the bot has already seen. On duty and Discard need no registration.
 - The bot only receives `message` and `callback_query` updates; no webhook or group setting changes are needed. Telegram polls are not used any more.
+- **Rollback is only plain before the first sign-up day.** Once a sign-up day exists, the previous release crash-loops on the current database; see the warning in [Rollback to the previous release](#rollback-to-the-previous-release).
 
 ## Manual Operations
 
@@ -168,6 +170,8 @@ printf '%s\n' "$prev" > ~/services/office-bot/current.sha
 
 Rollback keeps the current database; it does not restore an old snapshot.
 
+> **Warning: rolling back to a release from before the button sign-up.** The poll-based release reads `day.polls` for every `day:` row and crashes on a day without a `polls` field, so it would crash-loop. Rolling back to it with the current database is only safe **before the first sign-up day is created** (the first 09:00 on a working day after deploying, next: Friday 2026-10-02). After that, stop the bot, take a backup (Quick Reference), and then either restore the pre-deploy backup from `data/backups/` (see [Backups and restore](#backups-and-restore); everything recorded since the deploy is lost, including Flipper names) or delete the `day:` rows that have no `polls` field (those days disappear from `/stats` and `/history`) before starting the old release.
+
 ### Unresolved sends
 
 Telegram has no idempotency keys, so an ambiguous send becomes `uncertain` and is never resent blindly. See "Persistence and delivery recovery" in the README for the full procedure (`operations list` → stop the bot → verify in Telegram → `resolve`/`retry --verified-in-telegram` → restart). Operation keys are `signup:<day>`, `assignment:<day>` and `reminder:<day>`; `resolve` takes `--message-id N` and nothing else. Run these through a one-off container with the same data mount while the bot is **stopped**:
@@ -206,7 +210,7 @@ docker inspect office-bot-bot-1 --format '{{.RestartCount}} restarts, exit {{.St
 docker exec office-bot-bot-1 node dist/cli.js health
 ```
 
-Health reads `data/heartbeat.json`; it fails if the file is older than 120 s or the pid is gone. Typical causes: invalid `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, a configured webhook, the bot removed from the group, or a second poller using the same token (Telegram `409 Conflict`).
+Health reads `data/heartbeat.json`; it fails if the file is older than 120 s or the pid is gone. Typical causes: invalid `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, a configured webhook, the bot removed from the group, or a second poller using the same token (Telegram `409 Conflict`). A single update that keeps failing (steady `iteration_failed`) also stops the heartbeat, even though the scheduled sign-up, close and reminder keep running.
 
 ### Disk space
 

@@ -75,7 +75,7 @@ Do not resolve/retry a send while the process is running. The flag is an operato
 
 Create a consistent SQLite backup with `npm run backup -- /absolute/path/office-backup.db`; this works while the bot is running. Protect backups like the live database: they contain names and attendance-related records.
 
-To restore, stop the bot, preserve the current database and its WAL/SHM files, replace the database with the chosen backup, remove only the old database's WAL/SHM files, and restart. Restoring an old backup can lose acknowledged updates or delivery results: reconcile messages already sent since that backup **before** allowing the bot to publish again. Application rollback normally keeps the current database and does not restore an old snapshot.
+To restore, stop the bot, preserve the current database and its WAL/SHM files, replace the database with the chosen backup, remove only the old database's WAL/SHM files, and restart. Restoring an old backup can lose acknowledged updates or delivery results: reconcile messages already sent since that backup **before** allowing the bot to publish again. Application rollback normally keeps the current database and does not restore an old snapshot; rolling back past the button sign-up is the exception (see [Deployment](#deployment)).
 
 Health: `npm run health` verifies a recent successful polling/scheduler heartbeat and a live process. No public health endpoint exists. Logs contain lifecycle/error categories, never raw Telegram exceptions or tokens.
 
@@ -83,7 +83,7 @@ Health: `npm run health` verifies a recent successful polling/scheduler heartbea
 
 The private GitHub repository is `pmyagkov/office-bot`. GitHub Actions checks types, runs all tests on the runner and inside the pinned Docker build, verifies container persistence/backup and exercises a deliberately broken release in an isolated Compose project. Only a successful **main** run receives deployment credentials and deploys. PR runs have no deployment secrets. Concurrent releases are serialized by workflow and host locks.
 
-Images are tagged with the full commit SHA, compressed and transferred over SSH with pinned host keys. The remote script checks the image revision, takes a consistent backup, stops the previous poller, starts the new one and waits for health. A failed replacement is stopped before the previous version starts again. Rollback keeps the current database. A first deployment failure leaves the bot stopped. No registry credentials or public ports are needed.
+Images are tagged with the full commit SHA, compressed and transferred over SSH with pinned host keys. The remote script checks the image revision, takes a consistent backup, stops the previous poller, starts the new one and waits for health. A failed replacement is stopped before the previous version starts again. Rollback keeps the current database. **Rolling back to a release from before the button sign-up is only safe until the first sign-up day is created** (09:00 on the next working day after deploying): the old code crashes on any day without a `polls` field. After that, stop the bot, take a backup, and either restore the pre-deploy backup from `data/backups/` or delete the `day:` rows without `polls` before starting the old release (see `docs/DEPLOYMENT.md`, "Rollback to the previous release"). A first deployment failure leaves the bot stopped. No registry credentials or public ports are needed.
 
 Production paths (regular `nanoclaw` account):
 
