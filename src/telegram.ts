@@ -1,5 +1,5 @@
 import { Api, GrammyError, type Transformer } from 'grammy';
-import type { InlineKeyboardMarkup, Poll, Update } from 'grammy/types';
+import type { ChatMember, InlineKeyboardMarkup, Poll, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update } from 'grammy/types';
 import type { DayKey, PollKind, PollSnapshot, SendResult } from './types.js';
 
 export function snapshot(poll: Poll, messageId: number): PollSnapshot {
@@ -43,10 +43,20 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
         throw Error('Unable to retrieve closed poll');
       }
     },
-    sendMessage(chatId: number, text: string, keyboard?: InlineKeyboardMarkup): Promise<SendResult<number>> {
+    sendMessage(chatId: number, text: string, markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove): Promise<SendResult<number>> {
       return send(async () => (await api.sendMessage(chatId, text, {
-        parse_mode: 'HTML', reply_markup: keyboard, link_preview_options: { is_disabled: true },
+        parse_mode: 'HTML', reply_markup: markup, link_preview_options: { is_disabled: true },
       })).message_id);
+    },
+    async getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
+      try { return (await api.getChatMember(chatId, userId)).status; }
+      catch (error) {
+        if (error instanceof GrammyError && error.error_code === 400) {
+          const description = error.description.toLowerCase();
+          if (description.includes('user not found') || description.includes('member not found')) return null;
+        }
+        throw Error('Unable to read chat member');
+      }
     },
     async editMessage(chatId: number, messageId: number, text: string, keyboard?: InlineKeyboardMarkup): Promise<void> {
       try { await api.editMessageText(chatId, messageId, text, { parse_mode: 'HTML', reply_markup: keyboard ?? { inline_keyboard: [] }, link_preview_options: { is_disabled: true } }); }
@@ -55,8 +65,8 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
         throw Error('Unable to update assignment message');
       }
     },
-    async answerCallback(id: string, text: string): Promise<void> {
-      try { await api.answerCallbackQuery(id, { text }); } catch { /* Expired callback answers do not change committed state. */ }
+    async answerCallback(id: string, text: string, url?: string): Promise<void> {
+      try { await api.answerCallbackQuery(id, { text, ...(url ? { url } : {}) }); } catch { /* Expired callback answers do not change committed state. */ }
     },
   };
 }

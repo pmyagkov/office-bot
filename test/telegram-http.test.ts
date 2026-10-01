@@ -26,3 +26,20 @@ it('retrieves only required updates and uses safe edits and callback answers', a
   expect(server.calls[0].payload).toMatchObject({ offset: 100, allowed_updates: ['message', 'poll', 'poll_answer', 'callback_query'] });
   expect(server.calls[1].payload).toMatchObject({ reply_markup: { inline_keyboard: [] }, parse_mode: 'HTML' });
 });
+it('getMemberStatus returns the status, null for an unknown member and throws for other errors', async () => {
+  const { server, telegram } = await setup();
+  server.responses.push({ ok: true, result: { status: 'administrator', user: { id: 1, is_bot: false, first_name: 'A' } } },
+    { ok: false, error_code: 400, description: 'Bad Request: user not found' },
+    { ok: false, error_code: 500, description: 'Internal error at https://api.telegram.org/bot123456:secret' });
+  expect(await telegram.getMemberStatus(-1001, 1)).toBe('administrator');
+  expect(await telegram.getMemberStatus(-1001, 2)).toBeNull();
+  await expect(telegram.getMemberStatus(-1001, 3)).rejects.toThrow(new Error('Unable to read chat member'));
+  expect(server.calls[0]).toMatchObject({ method: 'getChatMember', payload: { chat_id: -1001, user_id: 1 } });
+});
+it('answers callbacks with an optional url', async () => {
+  const { server, telegram } = await setup();
+  await telegram.answerCallback('click', 'Open', 'https://t.me/office_test_bot?start=x');
+  await telegram.answerCallback('click', 'Recorded');
+  expect(server.calls[0].payload).toMatchObject({ callback_query_id: 'click', text: 'Open', url: 'https://t.me/office_test_bot?start=x' });
+  expect(server.calls[1].payload).not.toHaveProperty('url');
+});

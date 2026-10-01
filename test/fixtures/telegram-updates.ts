@@ -13,5 +13,14 @@ export function events() {
     click(day: string, actor: number, messageId: number, chatId = groupId): Update {
       return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor), chat_instance: 'test', data: `done:${day}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Assignment' } } };
     },
+    callback(data: string, actor: number, messageId: number, chatId: number): Update {
+      return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor), chat_instance: 'test', data, message: { message_id: messageId, date: 1790755200, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, text: 'Sign-up' } } };
+    },
+    press(day: string, action: 'checkin' | 'duty' | 'discard', actor: number, messageId: number, name?: string, chatId = groupId): Update {
+      return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor, name), chat_instance: 'test', data: `signup:${day}:${action}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Sign-up' } } };
+    },
+    usersShared(actor: number, targetId: number, requestId = 1, name?: string): Update {
+      return { update_id: next++, message: { message_id: next, date: 1790751600, chat: { id: actor, type: 'private', first_name: 'Person' }, from: user(actor), users_shared: { request_id: requestId, users: [{ user_id: targetId, first_name: name ?? `Person ${targetId}` }] } } };
+    },
   };
 }
