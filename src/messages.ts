@@ -4,7 +4,12 @@ import type { DayState } from './types.js';
 import type { Store } from './store.js';
 import type { TelegramPort } from './telegram.js';
 export const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-export const mention = (user: Participant) => `<a href="tg://user?id=${user.id}">${escapeHtml(user.name.slice(0, 100))}</a>`;
+export const displayName = (user: Participant) => Array.from(user.name.trim()).slice(0, 100).join('') || `User ${user.id}`;
+export const mention = (user: Participant) => `<a href="tg://user?id=${user.id}">${escapeHtml(displayName(user))}</a>`;
+export const tag = (user: Participant) => user.username ? `@${escapeHtml(user.username)}` : mention(user);
+export function clockLabel(iso: string, zone: string): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+}
 export function names(people: Participant[], budget = 2500): string {
   const parts: string[] = []; let length = 0;
   for (const person of people) {
