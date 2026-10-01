@@ -45,7 +45,10 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     const picked = shared.users[0];
     if (shared.request_id !== 1 || shared.users.length !== 1) return undefined;
     const name = [picked.first_name, picked.last_name].filter(Boolean).join(' ') || `User ${picked.user_id}`;
-    if (!facts.targetIsMember) return { pages: [`${escapeHtml(name)} is not in the office group.`], markup: PICKER };
+    if (!facts.targetIsMember) {
+      store.set(key, { kind: 'admin_person', saved: conv.saved } satisfies Conv);
+      return { pages: [`${escapeHtml(name)} is not in the office group.`], markup: PICKER };
+    }
     const target: Participant = { id: picked.user_id, name, ...(picked.username ? { username: picked.username } : {}) };
     store.set(key, { kind: 'admin_name', target, saved: conv.saved } satisfies Conv);
     return namePrompt(target, getFlipperName(store, target.id));

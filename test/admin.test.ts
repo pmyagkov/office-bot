@@ -115,6 +115,23 @@ it('a non-member pick is rejected and nothing is saved', async () => {
   for (const id of [44, 55, 66]) expect(h.flipperNames(id)).toBeUndefined();
 });
 
+it('a non-member pick during the name step resets to the picker', async () => {
+  const h = setup();
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
+  await h.updates.handleUpdate(text(h, 'Anna K'), now);
+  await h.updates.handleUpdate(h.event.usersShared(11, 33), now);
+  expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_name' });
+  await h.updates.handleUpdate(h.event.usersShared(11, 66, 1, 'Ghost'), now);
+  expect(last(h)).toEqual({ chat: 11, text: 'Ghost is not in the office group.', markup: PICKER });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1 });
+  await h.updates.handleUpdate(text(h, 'Should Not Save'), now);
+  expect(last(h)).toEqual({ chat: 11, text: 'Choose a person.', markup: PICKER });
+  expect(h.flipperNames(33)).toBeUndefined();
+  expect(h.flipperNames(66)).toBeUndefined();
+  expect(h.flipperNames(22)).toBe('Anna K');
+});
+
 it('picking yourself is allowed', async () => {
   const h = setup();
   await startDialog(h);
