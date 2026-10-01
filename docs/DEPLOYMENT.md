@@ -174,11 +174,32 @@ Rollback keeps the current database; it does not restore an old snapshot.
 
 ### Unresolved sends
 
-Telegram has no idempotency keys, so an ambiguous send becomes `uncertain` and is never resent blindly. See "Persistence and delivery recovery" in the README for the full procedure (`operations list` → stop the bot → verify in Telegram → `resolve`/`retry --verified-in-telegram` → restart). Operation keys are `signup:<day>`, `assignment:<day>` and `reminder:<day>`; `resolve` takes `--message-id N` and nothing else. Run these through a one-off container with the same data mount while the bot is **stopped**:
+Telegram has no idempotency keys. Before sending, the bot persists an operation; a connection failure or crash during a send marks it `uncertain` and it is **never resent automatically**. Explicit 429 rejections retry after Telegram's delay, permanent rejections stay visible, and message edits retry on the next tick. Operation keys are `signup:<day>` (the sign-up message), `assignment:<day>` and `reminder:<day>`.
 
-```bash
-docker run --rm --network none --user 1000:1000 -v ~/services/office-bot/data:/app/data "office-bot:$sha" node dist/cli.js operations list
-```
+Until an unresolved send is reconciled, a missing/ambiguous sign-up message has no working buttons and a missing/ambiguous assignment has no working confirmation.
+
+1. **Find it.** List unresolved operations (the bot may keep running for this read-only step):
+
+   ```bash
+   docker run --rm --network none --user 1000:1000 -v ~/services/office-bot/data:/app/data "office-bot:$sha" node dist/cli.js operations list
+   ```
+
+2. **Stop the bot** (see [Stop](#stop-required-before-recovery-commands)), take a backup, and inspect the real group or DM history in Telegram.
+3. **The message exists:** record its ID. `--verified-in-telegram` is mandatory and `--message-id` is the only other value `resolve` takes:
+
+   ```bash
+   docker run --rm --network none --user 1000:1000 -v ~/services/office-bot/data:/app/data "office-bot:$sha" node dist/cli.js operations resolve signup:2026-09-30 --message-id 42 --verified-in-telegram
+   ```
+
+4. **The message definitely does not exist:** only then allow a resend:
+
+   ```bash
+   docker run --rm --network none --user 1000:1000 -v ~/services/office-bot/data:/app/data "office-bot:$sha" node dist/cli.js operations retry signup:2026-09-30 --verified-in-telegram
+   ```
+
+5. **Restart** the bot (see [Restart](#restart)). The frozen draw is unchanged and reminders for earlier days are not newly sent.
+
+Never resolve or retry while the bot is running. The flag is an operator acknowledgement that you checked Telegram, not a delivery guarantee. Never edit database rows by hand to reroll a draw.
 
 ### Backups and restore
 
