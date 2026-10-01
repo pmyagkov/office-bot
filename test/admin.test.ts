@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
 import type { Update } from 'grammy/types';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRuntime } from '../src/runtime.js';
 import { createUpdates } from '../src/updates.js';
 import { at, harness, schedule } from './helpers/harness.js';
 import { groupId, user } from './fixtures/telegram-updates.js';
@@ -185,14 +189,42 @@ it('a non-admin cannot reach admin states even with a forged users_shared', asyn
   expect(h.store.get('conv:22')).toBeNull();
 });
 
-it('a failed membership lookup keeps the update cursor in place', async () => {
+it('a permanently rejected membership lookup answers Not available. and advances the cursor', async () => {
+  const h = setup();
+  h.mock.failures.set('getChatMember', { code: 400 });
+  const update = h.event.command('/admin', 11, 11);
+  await h.updates.handleUpdate(update, now);
+  expect(sent(h)).toEqual([{ chat: 11, text: 'Not available.', markup: undefined }]);
+  expect(h.store.get('offset')).toBe(update.update_id + 1);
+});
+
+it('a temporary membership lookup failure keeps the update cursor in place', async () => {
   const h = setup();
   await startDialog(h);
   const before = h.store.get('offset');
   h.mock.failures.set('getChatMember', { code: 500 });
   await expect(h.updates.handleUpdate(h.event.usersShared(11, 22), now)).rejects.toThrow();
   expect(h.store.get('offset')).toBe(before);
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0 });
+  expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_person', saved: 0 });
+});
+
+it('a temporary membership lookup failure still lets the same runtime step close the day, without a heartbeat', async () => {
+  const h = setup(); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); h.vote('request', 22);
+  const dir = mkdtempSync(join(tmpdir(), 'office-admin-')); const heartbeat = join(dir, 'heartbeat.json');
+  try {
+    const config = { token: '123456:dummy_dummy_dummy', chatId: groupId, database: ':memory:', heartbeat, schedule };
+    const runtime = createRuntime(config, h.store, h.telegram, () => at('10:00'), 'office_test_bot');
+    const before = h.store.get('offset');
+    h.mock.failures.set('getChatMember', { code: 500 }); h.mock.updates.push(h.event.command('/admin', 11, 11));
+    await expect(runtime.step()).rejects.toThrow('Unable to read chat member');
+    expect(h.store.get('offset')).toBe(before);
+    expect(h.day().phase).toBe('assigned');
+    expect(h.day().assignment).toMatchObject({ helper: { id: 11 }, messageId: expect.any(Number) });
+    expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('badge duty today');
+    expect(existsSync(heartbeat)).toBe(false);
+    h.mock.failures.clear(); await runtime.step();
+    expect(existsSync(heartbeat)).toBe(true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 it('the self flow and cancel still work next to the admin dialog', async () => {

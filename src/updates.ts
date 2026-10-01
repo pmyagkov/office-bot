@@ -36,7 +36,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       const command = m?.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@([\w]+))?(?:\s+(.*))?$/.exec(m.text ?? '') : null;
       const addressed = !command || !command[2] || command[2].toLowerCase() === username.toLowerCase();
       const privateMessage = !!m && addressed && !!m.from && !m.from.is_bot && m.chat.type === 'private' && m.chat.id === m.from.id;
-      // Network facts are gathered before the synchronous transaction; a lookup failure throws and the cursor stays put.
+      // Network facts are gathered before the synchronous transaction; a temporary lookup failure throws and the cursor stays put.
       const isAdmin = async (userId: number) => ['administrator', 'creator'].includes(await telegram.getMemberStatus(chatId, userId) ?? '');
       const facts: Facts = { admin: false };
       if (privateMessage && m.from) {

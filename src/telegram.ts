@@ -33,6 +33,11 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
           const description = error.description.toLowerCase();
           if (description.includes('user not found') || description.includes('member not found')) return null;
         }
+        // Other permanent rejections would block the update cursor forever; flood limits, 5xx and network errors are retried.
+        if (error instanceof GrammyError && error.error_code >= 400 && error.error_code < 500 && error.error_code !== 429) {
+          console.error(JSON.stringify({ event: 'member_lookup_failed', code: error.error_code }));
+          return null;
+        }
         throw Error('Unable to read chat member');
       }
     },

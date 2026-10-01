@@ -25,10 +25,14 @@ export function createRuntime(config: Config, store: Store, telegram: TelegramPo
     async step(timeout = 0): Promise<void> {
       scheduler.restoreDeliveries();
       updates.restoreTestDeliveries();
-      await drain(timeout); // Commit queued confirmations before considering reminders.
+      // Commit queued confirmations before considering reminders. A failing update stays unconsumed, but must not
+      // starve the daily flow: the scheduler still runs and the error is rethrown afterwards, without a heartbeat.
+      let failure: { error: unknown } | undefined;
+      try { await drain(timeout); } catch (error) { failure = { error }; }
       await scheduler.tick(clock());
       await updates.flushTestFlow(clock());
       await updates.flushReplies(clock());
+      if (failure) throw failure.error;
       if (config.heartbeat) {
         mkdirSync(dirname(config.heartbeat), { recursive: true, mode: 0o700 });
         writeFileSync(`${config.heartbeat}.tmp`, JSON.stringify({ at: Date.now(), pid: process.pid }), { mode: 0o600 });

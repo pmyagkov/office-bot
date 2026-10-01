@@ -30,6 +30,21 @@ it('getMemberStatus returns the status, null for an unknown member and throws fo
   await expect(telegram.getMemberStatus(-1001, 3)).rejects.toThrow(new Error('Unable to read chat member'));
   expect(server.calls[0]).toMatchObject({ method: 'getChatMember', payload: { chat_id: -1001, user_id: 1 } });
 });
+it('getMemberStatus returns null and logs the code for a permanent 4xx, but throws for flood limits and disconnects', async () => {
+  const { server, telegram } = await setup();
+  const errors: unknown[] = []; const original = console.error; console.error = (...args: unknown[]) => { errors.push(args); };
+  try {
+    server.responses.push({ ok: false, error_code: 400, description: 'Bad Request: member list is inaccessible bot123456:secret' },
+      { ok: false, error_code: 403, description: 'Forbidden: bot was kicked' },
+      { ok: false, error_code: 429, description: 'Too many requests', parameters: { retry_after: 5 } }, 'disconnect');
+    expect(await telegram.getMemberStatus(-1001, 1)).toBeNull();
+    expect(await telegram.getMemberStatus(-1001, 2)).toBeNull();
+    await expect(telegram.getMemberStatus(-1001, 3)).rejects.toThrow(new Error('Unable to read chat member'));
+    await expect(telegram.getMemberStatus(-1001, 4)).rejects.toThrow(new Error('Unable to read chat member'));
+  } finally { console.error = original; }
+  expect(errors).toEqual([[JSON.stringify({ event: 'member_lookup_failed', code: 400 })], [JSON.stringify({ event: 'member_lookup_failed', code: 403 })]]);
+  expect(JSON.stringify(errors)).not.toMatch(/inaccessible|secret|kicked/);
+});
 it('answers callbacks with an optional url', async () => {
   const { server, telegram } = await setup();
   await telegram.answerCallback('click', 'Open', 'https://t.me/office_test_bot?start=x');
