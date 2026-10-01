@@ -1,7 +1,7 @@
 import type { InlineKeyboardMarkup } from 'grammy/types';
 import type { Store } from './store.js';
 import type { TelegramPort } from './telegram.js';
-import type { Choice, DayState, Participant } from './types.js';
+import { isLegacy, type Choice, type DayState, type Participant } from './types.js';
 import { clockLabel, displayName, escapeHtml } from './messages.js';
 
 function dayHeader(day: string): string {
@@ -34,12 +34,16 @@ export function signupKeyboard(day: DayState): InlineKeyboardMarkup {
     [{ text: '❌ Discard', callback_data: data('discard') }],
   ] };
 }
+// `signature` is what refreshSignups compares against `signup.rendered` to skip redundant edits.
+export function renderSignup(day: DayState, zone: string) {
+  const text = signupText(day, zone), keyboard = signupKeyboard(day);
+  return { text, keyboard, signature: JSON.stringify({ text, keyboard }) };
+}
 export async function refreshSignups(store: Store, telegram: Pick<TelegramPort, 'editMessage'>, zone: string): Promise<void> {
   for (const day of store.list<DayState>('day:')) {
     const signup = day.signup;
-    if (!signup?.messageId || Object.keys(day.polls ?? {}).length) continue;
-    const text = signupText(day, zone), keyboard = signupKeyboard(day);
-    const signature = JSON.stringify({ text, keyboard });
+    if (!signup?.messageId || isLegacy(day)) continue;
+    const { text, keyboard, signature } = renderSignup(day, zone);
     if (signature === signup.rendered) continue;
     try {
       await telegram.editMessage(day.chatId, signup.messageId, text, keyboard);

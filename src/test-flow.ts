@@ -4,7 +4,7 @@ import type { DayState, Operation, Participant } from './types.js';
 import { scopedStore } from './store.js';
 import { createDelivery } from './delivery.js';
 import { createFlow } from './flow.js';
-import { applyPollUpdate, confirmAssignment } from './input-state.js';
+import { confirmAssignment } from './input-state.js';
 import { assignmentMessage, mention, refreshAssignments } from './messages.js';
 import { localTime } from './clock.js';
 import { renderStats } from './reports.js';
@@ -27,7 +27,6 @@ export function createTestFlow(services: Services) {
     const keyboard = (value?: InlineKeyboardMarkup): InlineKeyboardMarkup | undefined => value && ({ inline_keyboard: value.inline_keyboard.map(row => row.map(b => 'callback_data' in b && b.callback_data.startsWith('done:') ? { ...b, callback_data: `testdone:${s.id}:${b.callback_data.slice(5)}` } : b)) });
     const text = (value: string) => `[TEST] ${value.replaceAll('/today', '/test')}`;
     const port = { ...telegram,
-      sendPoll: (...args: Parameters<typeof telegram.sendPoll>) => telegram.sendPoll(args[0], args[1], args[2], args[3], '[TEST] '),
       sendMessage: (to: number, value: string, buttons?: InlineKeyboardMarkup) => telegram.sendMessage(to, text(value), keyboard(buttons)),
       editMessage: (to: number, id: number, value: string, buttons?: InlineKeyboardMarkup) => telegram.editMessage(to, id, text(value), keyboard(buttons)),
     };
@@ -60,9 +59,6 @@ export function createTestFlow(services: Services) {
     }
   }
   function apply(update: Update, now: Date): string | undefined {
-    for (const s of sessions()) {
-      if ((s.stage !== 'ended' && !expired(s, now)) || (update.poll && s.cleanupPending)) applyPollUpdate(context(s).store, update);
-    }
     const cb = update.callback_query;
     if (!cb || !/^(test|testdone):/.test(cb.data ?? '')) return;
     const match = /^(test|testdone):([a-z0-9]+):(.+)$/.exec(cb.data ?? '');
@@ -134,13 +130,12 @@ export function createTestFlow(services: Services) {
         if (Date.parse(s.expiresAt) - now.getTime() < 5_000) { s.stage = 'ending'; save(s); }
         else {
           await c.flow.openDay(s.day, new Date(s.expiresAt), now);
-          if (state(s)?.polls.request && state(s)?.polls.helper) { s.stage = 'voting'; save(s); }
+          if (state(s)?.signup?.messageId) { s.stage = 'voting'; save(s); }
         }
       }
       let day = state(s);
       if (s.stage === 'closing' && day) {
-        if (!finalize && ['open', 'closing', 'incomplete'].includes(day.phase)) await c.flow.closeDay(day);
-        if (finalize) await c.flow.finishDay(day, now);
+        if (day.phase === 'open') await c.flow.closeDay(day, now);
         day = state(s)!;
         if (['assigned', 'empty', 'no_helpers'].includes(day.phase)) { s.stage = 'result'; save(s); }
       }
@@ -151,13 +146,12 @@ export function createTestFlow(services: Services) {
         if (s.statsRequested) await c.delivery.deliver('stats', now, () => c.telegram.sendMessage(chatId, renderStats(c.store, s.day, 'week')));
       }
       if (s.stage === 'ending' || (s.stage === 'ended' && s.cleanupPending && !expired(s, now))) {
-        if (day && Object.values(day.polls).some(p => !p.closed)) await c.flow.closeDay(day);
         const a = day?.assignment;
         if (a?.messageId && !s.assignmentCleaned) {
           try { await c.telegram.editMessage(chatId, a.messageId, `${assignmentMessage(a, schedule.zone)}\n\nTest ended.`); s.assignmentCleaned = true; }
           catch { /* The test is inactive even if Telegram cannot remove its old button. */ }
         }
-        s.cleanupPending = !!((a?.messageId && !s.assignmentCleaned) || (day && Object.values(day.polls).some(p => !p.closed)));
+        s.cleanupPending = !!(a?.messageId && !s.assignmentCleaned);
         s.stage = 'ended'; save(s);
       }
       await render(s, now);

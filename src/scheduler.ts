@@ -1,15 +1,18 @@
 import type { Store } from './store.js';
 import type { TelegramPort } from './telegram.js';
 import type { Delivery } from './delivery.js';
-import type { DayState, Schedule } from './types.js';
+import { isLegacy, type DayState, type Schedule } from './types.js';
 import { localTime, scheduledInstant } from './clock.js';
 import { refreshAssignments } from './messages.js';
+import { refreshSignups } from './signup.js';
 import { createFlow } from './flow.js';
-export type Services = { store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number; chooseIndex: (size: number) => number; clock?: () => Date };
+export type Services = {
+  store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number;
+  chooseIndex: (size: number) => number; flipperNames: (id: number) => string | undefined; username?: string; clock?: () => Date;
+};
 export function createScheduler(services: Services) {
   const { store, telegram, schedule, clock } = services;
   const flow = createFlow(services);
-  const due = (day: DayState, now: Date) => now >= scheduledInstant(day.day, schedule.closeMinute, schedule.zone);
   return {
     restoreDeliveries: flow.restoreDeliveries,
     async tick(now: Date): Promise<void> {
@@ -20,7 +23,8 @@ export function createScheduler(services: Services) {
         await flow.openDay(local.day, deadline, now);
       }
       for (const day of store.list<DayState>('day:')) {
-        if (['open', 'closing', 'incomplete'].includes(day.phase) && due(day, now)) await flow.closeDay(day);
+        if (isLegacy(day) || !day.signup) continue;
+        if (day.phase === 'open') { if (now.getTime() >= Date.parse(day.signup.closesAt)) await flow.closeDay(day, now); }
         else await flow.publish(day, now);
         const reminderNow = clock?.() ?? now;
         const eligible = () => {
@@ -29,10 +33,8 @@ export function createScheduler(services: Services) {
         };
         if (eligible()) await flow.remind(day, reminderNow, eligible);
       }
+      await refreshSignups(store, telegram, schedule.zone);
       await refreshAssignments(store, telegram, schedule.zone);
-    },
-    async finishClosing(now: Date): Promise<void> {
-      for (const day of store.list<DayState>('day:')) if (due(day, now)) await flow.finishDay(day, now);
     },
   };
 }

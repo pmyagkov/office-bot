@@ -1,10 +1,11 @@
-import type { CallbackQuery, Update } from 'grammy/types';
+import type { CallbackQuery } from 'grammy/types';
 import type { Store } from './store.js';
-import { pollKinds, type Choice, type DayState } from './types.js';
-import { snapshot } from './telegram.js';
+import type { Choice, DayState } from './types.js';
 
-export function confirmAssignment(store: Store, cb: CallbackQuery, now: Date): string {
-  const match = /^done:(\d{4}-\d{2}-\d{2})$/.exec(cb.data ?? '');
+// Only `done:` callbacks belong to confirmation; anything else is left for other handlers.
+export function confirmAssignment(store: Store, cb: CallbackQuery, now: Date): string | undefined {
+  if (!cb.data?.startsWith('done:')) return undefined;
+  const match = /^done:(\d{4}-\d{2}-\d{2})$/.exec(cb.data);
   const state = match ? store.get<DayState>(`day:${match[1]}`) : undefined;
   const a = state?.assignment;
   if (!a || !cb.message || a.chatId !== cb.message.chat.id || a.messageId !== cb.message.message_id || cb.from.id !== a.helper.id) return 'Only the assigned helper can confirm this assignment.';
@@ -34,25 +35,4 @@ export function applySignupPress(store: Store, cb: CallbackQuery, now: Date, bot
   else signup.choices[id] = { user: { id: cb.from.id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), username: cb.from.username }, choice: action };
   store.set(`day:${state.day}`, state);
   return { text: PRESS_TEXT[action] };
-}
-
-export function applyPollUpdate(store: Store, update: Update): void {
-  const pollId = update.poll_answer?.poll_id ?? update.poll?.id;
-  if (!pollId) return;
-  for (const day of store.list<DayState>('day:')) {
-    if (!['open', 'closing', 'incomplete'].includes(day.phase)) continue;
-    for (const kind of pollKinds) {
-      const poll = day.polls[kind]; if (poll?.id !== pollId) continue;
-      const answer = update.poll_answer;
-      if (answer?.user && !answer.user.is_bot && Number.isSafeInteger(answer.user.id)) {
-        const option = answer.option_ids[0] ?? null;
-        if (answer.option_ids.length <= 1 && (option === null || option === 0 || option === 1)) {
-          poll.votes[String(answer.user.id)] = { user: { id: answer.user.id,
-            name: [answer.user.first_name, answer.user.last_name].filter(Boolean).join(' '), username: answer.user.username }, option };
-        }
-      }
-      if (update.poll && (!poll.closed || update.poll.is_closed)) Object.assign(poll, snapshot(update.poll, poll.messageId));
-      store.set(`day:${day.day}`, day); return;
-    }
-  }
 }

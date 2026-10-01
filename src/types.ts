@@ -1,6 +1,4 @@
 export type DayKey = string;
-export type PollKind = 'request' | 'helper';
-export const pollKinds: PollKind[] = ['request', 'helper'];
 export type Participant = { id: number; name: string; username?: string; flipperName?: string };
 export type Choice = 'checkin' | 'duty';
 export type Signup = {
@@ -13,14 +11,13 @@ export type Assignment = {
   day: DayKey; chatId: number; helper: Participant; recipients: Participant[];
   messageId: number | null; confirmedAt: string | null; rendered: boolean; onDuty?: Participant[];
 };
-export type PollSnapshot = {
-  id: string; messageId: number; closed: boolean; optionCounts: number[]; totalVoters: number;
-};
-export type PollState = PollSnapshot & { votes: Record<string, { user: Participant; option: number | null }> };
+// `polls` and the 'closing' | 'incomplete' phases only exist on days stored before the sign-up cutover.
 export type DayState = {
-  day: DayKey; chatId: number; phase: 'open' | 'closing' | 'assigned' | 'empty' | 'no_helpers' | 'incomplete';
-  polls: Partial<Record<PollKind, PollState>>; signup?: Signup; assignment?: Assignment; issue?: string;
+  day: DayKey; chatId: number; phase: 'open' | 'assigned' | 'empty' | 'no_helpers' | 'closing' | 'incomplete';
+  polls?: unknown; signup?: Signup; assignment?: Assignment; issue?: string;
 };
+// A legacy day is never opened, closed, rendered or reminded; its assignment still feeds stats and history.
+export const isLegacy = (day: DayState) => !!day.polls && Object.keys(day.polls).length > 0;
 export type SendResult<T> = { kind: 'sent'; value: T } |
   { kind: 'rejected'; code: number; retryAfter?: number } | { kind: 'uncertain' };
 export type Operation<T = unknown> = {

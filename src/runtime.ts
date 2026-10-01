@@ -5,12 +5,14 @@ import { randomInt } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createDelivery } from './delivery.js';
+import { getFlipperName } from './flipper.js';
 import { createScheduler } from './scheduler.js';
 import { createUpdates } from './updates.js';
 export function createRuntime(config: Config, store: Store, telegram: TelegramPort, clock: () => Date, username: string) {
-  const services = { store, telegram, delivery: createDelivery(store), schedule: config.schedule, chatId: config.chatId };
-  const scheduler = createScheduler({ ...services, chooseIndex: randomInt, clock });
-  const updates = createUpdates({ ...services, username, clock });
+  const services = { store, telegram, delivery: createDelivery(store), schedule: config.schedule, chatId: config.chatId,
+    flipperNames: (id: number) => getFlipperName(store, id), username, clock };
+  const scheduler = createScheduler({ ...services, chooseIndex: randomInt });
+  const updates = createUpdates(services);
   async function drain(timeout: number) {
     while (true) {
       const batch = await telegram.getUpdates(store.get<number>('offset') ?? 0, timeout);
@@ -26,8 +28,6 @@ export function createRuntime(config: Config, store: Store, telegram: TelegramPo
       await drain(timeout); // Commit queued confirmations before considering reminders.
       await scheduler.tick(clock());
       await updates.flushTestFlow(clock());
-      await drain(0); // stopPoll may enqueue final poll snapshots and vote changes.
-      await scheduler.finishClosing(clock());
       await updates.flushTestFlow(clock(), true);
       await updates.flushReplies(clock());
       if (config.heartbeat) {

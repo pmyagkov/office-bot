@@ -1,11 +1,7 @@
 import { Api, GrammyError, type Transformer } from 'grammy';
-import type { ChatMember, InlineKeyboardMarkup, Poll, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update } from 'grammy/types';
-import type { DayKey, PollKind, PollSnapshot, SendResult } from './types.js';
+import type { ChatMember, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update } from 'grammy/types';
+import type { SendResult } from './types.js';
 
-export function snapshot(poll: Poll, messageId: number): PollSnapshot {
-  return { id: poll.id, messageId, closed: poll.is_closed,
-    optionCounts: poll.options.map(o => o.voter_count), totalVoters: poll.total_voter_count };
-}
 export async function send<T>(action: () => Promise<T>): Promise<SendResult<T>> {
   try { return { kind: 'sent', value: await action() }; }
   catch (error) {
@@ -23,25 +19,7 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
     api,
     getUpdates(offset: number, timeoutSeconds: number): Promise<Update[]> {
       return api.getUpdates({ offset, timeout: timeoutSeconds, limit: 100,
-        allowed_updates: ['message', 'poll', 'poll_answer', 'callback_query'] });
-    },
-    sendPoll(chatId: number, kind: PollKind, day: DayKey, closesAt: Date, prefix = ''): Promise<SendResult<PollSnapshot>> {
-      const question = kind === 'request' ? 'Who needs to be checked in today?' : "Who's coming to the office and can help?";
-      const choices = kind === 'request' ? ['I do', 'Not today'] : ["I'm coming and can help", "I can't help today"];
-      return send(async () => {
-        const message = await api.sendPoll(chatId, `${prefix}${question} (${day})`, choices.map(text => ({ text })), {
-          is_anonymous: false, allows_multiple_answers: false, allows_revoting: true, type: 'regular',
-          close_date: Math.floor(closesAt.getTime() / 1000),
-        });
-        return snapshot(message.poll, message.message_id);
-      });
-    },
-    async stopPoll(chatId: number, messageId: number): Promise<PollSnapshot | null> {
-      try { return snapshot(await api.stopPoll(chatId, messageId), messageId); }
-      catch (error) {
-        if (error instanceof GrammyError && error.description.toLowerCase().includes('poll has already been closed')) return null;
-        throw Error('Unable to retrieve closed poll');
-      }
+        allowed_updates: ['message', 'callback_query'] });
     },
     sendMessage(chatId: number, text: string, markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove): Promise<SendResult<number>> {
       return send(async () => (await api.sendMessage(chatId, text, {
