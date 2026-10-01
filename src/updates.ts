@@ -7,7 +7,7 @@ import { refreshAssignments } from './messages.js';
 import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { refreshSignups } from './signup.js';
 import { createTestFlow } from './test-flow.js';
-import { handlePrivateMessage, type Reply } from './private-chat.js';
+import { handlePrivateCallback, handlePrivateMessage, isAdminConv, type Conv, type Facts, type Reply } from './private-chat.js';
 type ReplyJob = { key: string; chatId: number; pages: string[]; markup?: Reply['markup']; done: boolean };
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
@@ -31,25 +31,47 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
     async handleUpdate(update: Update, now: Date): Promise<void> {
       if (update.update_id < (store.get<number>('offset') ?? 0)) return;
       tests.restoreDeliveries();
+      const cb = update.callback_query;
+      const m = update.message;
+      const command = m?.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@([\w]+))?(?:\s+(.*))?$/.exec(m.text ?? '') : null;
+      const addressed = !command || !command[2] || command[2].toLowerCase() === username.toLowerCase();
+      const privateMessage = !!m && addressed && !!m.from && !m.from.is_bot && m.chat.type === 'private' && m.chat.id === m.from.id;
+      // Network facts are gathered before the synchronous transaction; a lookup failure throws and the cursor stays put.
+      const isAdmin = async (userId: number) => ['administrator', 'creator'].includes(await telegram.getMemberStatus(chatId, userId) ?? '');
+      const facts: Facts = { admin: false };
+      if (privateMessage && m.from) {
+        const conv = store.get<Conv | null>(`conv:${m.from.id}`) ?? undefined;
+        if (command?.[1] === 'admin' || isAdminConv(conv) || m.users_shared) {
+          facts.admin = await isAdmin(m.from.id);
+          const picked = m.users_shared?.users[0];
+          if (facts.admin && isAdminConv(conv) && picked) {
+            const status = await telegram.getMemberStatus(chatId, picked.user_id);
+            facts.targetIsMember = status !== null && status !== 'left' && status !== 'kicked';
+          }
+        }
+      } else if (cb?.data?.startsWith('admin:')) facts.admin = await isAdmin(cb.from.id);
       let answer: PressResult | undefined;
       store.atomic(() => {
         const testText = tests.apply(update, now);
-        const cb = update.callback_query;
         if (testText !== undefined) answer = { text: testText };
         else if (cb) {
           answer = applySignupPress(store, cb, now, username, flipperNames);
+          if (!answer) {
+            const result = handlePrivateCallback(store, cb, now, facts);
+            if (result) {
+              answer = { text: result.text };
+              if (result.reply?.pages.length) { const key = `callback:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: cb.from.id, pages: result.reply.pages, markup: result.reply.markup, done: false } satisfies ReplyJob); }
+            }
+          }
           if (!answer) { const text = confirmAssignment(store, cb, now); if (text) answer = { text }; }
         }
         if (cb && !answer) answer = { text: 'Not available.' };
-        const m = update.message;
-        const command = m?.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@([\w]+))?(?:\s+(.*))?$/.exec(m.text ?? '') : null;
-        const addressed = !command || !command[2] || command[2].toLowerCase() === username.toLowerCase();
-        if (m && addressed && m.from && !m.from.is_bot && m.chat.type === 'private' && m.chat.id === m.from.id) {
+        if (m && privateMessage) {
           let reply: Reply | undefined;
           if (command?.[1] === 'start' && command[3]?.trim() !== 'flipper') {
             store.set(`user:${m.from.id}`, { id: m.from.id, startedAt: now.toISOString() });
             reply = { pages: ["You're ready to receive a private reminder at 14:00 (Europe/Belgrade) if you're assigned badge duty and haven't confirmed it yet. Sign up and confirm in the group."] };
-          } else reply = handlePrivateMessage(store, m, now, { admin: false });
+          } else reply = handlePrivateMessage(store, m, now, facts);
           if (reply?.pages.length) { const key = `command:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: m.chat.id, pages: reply.pages, markup: reply.markup, done: false } satisfies ReplyJob); }
         } else if (m && command && addressed) {
           let pages: string[] = [];
