@@ -177,6 +177,8 @@ it('a restart mid-dialog resumes at the name step', async () => {
   expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1, at: now.toISOString() });
 });
 
+const EXPIRED = 'That admin session expired. Send /admin flipper to start again.';
+const REMOVE = { remove_keyboard: true };
 it('an admin dialog older than one hour is ignored and cleared, including its Back button', async () => {
   const h = setup(); const later = new Date(now.getTime() + 3_600_000);
   await startDialog(h);
@@ -185,12 +187,36 @@ it('an admin dialog older than one hour is ignored and cleared, including its Ba
   await h.updates.handleUpdate(text(h, 'thanks'), later);
   expect(h.flipperNames(22)).toBeUndefined();
   expect(h.store.get('conv:11')).toBeNull();
-  expect(sent(h)).toHaveLength(count);
+  expect(sent(h)).toHaveLength(count + 1);
+  expect(last(h)).toEqual({ chat: 11, text: EXPIRED, markup: REMOVE });
   h.store.set('conv:11', { kind: 'admin_name', target: { id: 22, name: 'Person 22' }, saved: 0, at: at('08:00').toISOString() });
   await h.updates.handleUpdate(h.event.callback('admin:back', 11, 5, 11), now);
   expect(h.calls('answerCallbackQuery').at(-1)!.payload).toMatchObject({ text: 'Not available.' });
   expect(h.store.get('conv:11')).toBeNull();
-  expect(sent(h)).toHaveLength(count);
+  expect(sent(h)).toHaveLength(count + 2);
+  expect(last(h)).toEqual({ chat: 11, text: EXPIRED, markup: REMOVE });
+});
+
+// The picker keyboard stays on the admin's screen after the dialog expires, so the first
+// interaction with it must take it away instead of staying silent.
+it.each([
+  ['Finish', (h: ReturnType<typeof harness>) => text(h, 'Finish'), EXPIRED],
+  ['Choose person', (h: ReturnType<typeof harness>) => h.event.usersShared(11, 22), EXPIRED],
+  ['plain text', (h: ReturnType<typeof harness>) => text(h, 'hello'), EXPIRED],
+  ['/cancel', (h: ReturnType<typeof harness>) => h.event.command('/cancel', 11, 11), 'Cancelled.'],
+  ['/flipper', (h: ReturnType<typeof harness>) => h.event.command('/flipper', 11, 11), 'How are you listed in Flipper? Send the name exactly as it appears there.'],
+  ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), 'Admin commands:\n/admin flipper — set Flipper names'],
+])('an expired admin dialog answers %s once and removes the keyboard', async (_name, build, reply) => {
+  const h = setup(); const later = new Date(now.getTime() + 3_600_000);
+  await startDialog(h);
+  await h.updates.handleUpdate(build(h), later);
+  expect(last(h)).toEqual({ chat: 11, text: reply, markup: REMOVE });
+  expect(h.flipperNames(22)).toBeUndefined();
+  const count = sent(h).length;
+  if (reply === EXPIRED) {
+    await h.updates.handleUpdate(text(h, 'hello again'), later);
+    expect(sent(h)).toHaveLength(count);
+  }
 });
 
 it('a non-admin cannot reach admin states even with a forged users_shared', async () => {
