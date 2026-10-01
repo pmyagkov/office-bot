@@ -40,14 +40,14 @@ it('/admin flipper loops over people and Finish reports the count', async () => 
   const h = setup();
   await startDialog(h);
   expect(last(h)).toEqual({ chat: 11, text: 'Choose a person.', markup: PICKER });
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0, at: now.toISOString() });
   await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Flipper name for Person 22?', markup: BACK });
   await h.updates.handleUpdate(text(h, '  Anna K '), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Saved: Anna K for Person 22.', markup: PICKER });
   expect(h.flipperNames(22)).toBe('Anna K');
   expect(h.store.get('flipper:22')).toMatchObject({ setBy: 11 });
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1, at: now.toISOString() });
   await h.updates.handleUpdate(h.event.usersShared(11, 33, 1, 'Bob'), now);
   expect(last(h)?.text).toBe('Flipper name for Bob?');
   await h.updates.handleUpdate(text(h, 'Bob B'), now);
@@ -66,7 +66,7 @@ it('Back returns to the picker without saving; the current name is shown and ove
   await h.updates.handleUpdate(back, now);
   expect(h.calls('answerCallbackQuery').at(-1)!.payload.callback_query_id).toBe(back.callback_query!.id);
   expect(last(h)).toEqual({ chat: 11, text: 'Choose a person.', markup: PICKER });
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0, at: now.toISOString() });
   expect(h.flipperNames(22)).toBe('Old <Name>');
   await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
   await h.updates.handleUpdate(text(h, 'New Name'), now);
@@ -79,7 +79,7 @@ it('Back outside the name step or from a non-admin is not available', async () =
   const stale = h.event.callback('admin:back', 11, 5, 11);
   await h.updates.handleUpdate(stale, now);
   expect(h.calls('answerCallbackQuery').at(-1)!.payload).toMatchObject({ text: 'Not available.' });
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0, at: now.toISOString() });
   await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
   const forged = h.event.callback('admin:back', 22, 5, 22);
   await h.updates.handleUpdate(forged, now);
@@ -94,7 +94,7 @@ it('the word "Finish" typed while a name is awaited is saved as the name', async
   await h.updates.handleUpdate(text(h, 'Finish'), now);
   expect(h.flipperNames(22)).toBe('Finish');
   expect(last(h)?.text).toBe('Saved: Finish for Person 22.');
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1, at: now.toISOString() });
 });
 
 it('an invalid name re-asks and saves nothing', async () => {
@@ -115,7 +115,7 @@ it('a non-member pick is rejected and nothing is saved', async () => {
     expect(last(h)?.text).toBe(`&lt;N${id}&gt; is not in the office group.`);
   }
   await h.updates.handleUpdate(text(h, 'Sneaky'), now);
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 0, at: now.toISOString() });
   for (const id of [44, 55, 66]) expect(h.flipperNames(id)).toBeUndefined();
 });
 
@@ -128,7 +128,7 @@ it('a non-member pick during the name step resets to the picker', async () => {
   expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_name' });
   await h.updates.handleUpdate(h.event.usersShared(11, 66, 1, 'Ghost'), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Ghost is not in the office group.', markup: PICKER });
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1, at: now.toISOString() });
   await h.updates.handleUpdate(text(h, 'Should Not Save'), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Choose a person.', markup: PICKER });
   expect(h.flipperNames(33)).toBeUndefined();
@@ -174,7 +174,23 @@ it('a restart mid-dialog resumes at the name step', async () => {
   const restarted = createUpdates({ store: h.store, telegram: h.telegram, delivery: h.delivery, schedule, chatId: groupId, username: 'office_test_bot', flipperNames: h.flipperNames });
   await restarted.handleUpdate(text(h, 'Anna K'), now);
   expect(h.flipperNames(22)).toBe('Anna K');
-  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1 });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'admin_person', saved: 1, at: now.toISOString() });
+});
+
+it('an admin dialog older than one hour is ignored and cleared, including its Back button', async () => {
+  const h = setup(); const later = new Date(now.getTime() + 3_600_000);
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
+  const count = sent(h).length;
+  await h.updates.handleUpdate(text(h, 'thanks'), later);
+  expect(h.flipperNames(22)).toBeUndefined();
+  expect(h.store.get('conv:11')).toBeNull();
+  expect(sent(h)).toHaveLength(count);
+  h.store.set('conv:11', { kind: 'admin_name', target: { id: 22, name: 'Person 22' }, saved: 0, at: at('08:00').toISOString() });
+  await h.updates.handleUpdate(h.event.callback('admin:back', 11, 5, 11), now);
+  expect(h.calls('answerCallbackQuery').at(-1)!.payload).toMatchObject({ text: 'Not available.' });
+  expect(h.store.get('conv:11')).toBeNull();
+  expect(sent(h)).toHaveLength(count);
 });
 
 it('a non-admin cannot reach admin states even with a forged users_shared', async () => {
@@ -182,7 +198,7 @@ it('a non-admin cannot reach admin states even with a forged users_shared', asyn
   await h.updates.handleUpdate(h.event.usersShared(22, 33), now);
   await h.updates.handleUpdate(text(h, 'Anna K', 22), now);
   await h.updates.handleUpdate(h.event.command('/admin flipper', 22, 22), now);
-  h.store.set('conv:22', { kind: 'admin_name', target: { id: 33, name: 'Person 33' }, saved: 0 });
+  h.store.set('conv:22', { kind: 'admin_name', target: { id: 33, name: 'Person 33' }, saved: 0, at: now.toISOString() });
   await h.updates.handleUpdate(text(h, 'Forged', 22), now);
   expect(h.flipperNames(33)).toBeUndefined();
   expect(sent(h).map(s => s.text)).toEqual(['Not available.', 'Not available.']);

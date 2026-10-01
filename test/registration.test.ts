@@ -18,7 +18,7 @@ it('/start flipper asks for the name and stores the conversation', async () => {
   const h = harness();
   await h.updates.handleUpdate(h.event.command('/start flipper', 11, 11), now);
   expect(sent(h)).toEqual([{ chat: 11, text: PROMPT }]);
-  expect(h.store.get('conv:11')).toEqual({ kind: 'self_name' });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'self_name', at: now.toISOString() });
   expect(h.store.get('user:11')).toMatchObject({ id: 11 });
 });
 
@@ -39,7 +39,7 @@ it('invalid text re-asks and saves nothing', async () => {
   for (const bad of ['   ', 'x'.repeat(65), 'two\nlines']) await h.updates.handleUpdate(text(h, bad), now);
   expect(sent(h).slice(1)).toEqual([{ chat: 11, text: INVALID }, { chat: 11, text: INVALID }, { chat: 11, text: INVALID }]);
   expect(h.flipperNames(11)).toBeUndefined();
-  expect(h.store.get('conv:11')).toEqual({ kind: 'self_name' });
+  expect(h.store.get('conv:11')).toEqual({ kind: 'self_name', at: now.toISOString() });
 });
 
 it('/flipper changes an existing name', async () => {
@@ -65,6 +65,30 @@ it('survives a restart between prompt and answer', async () => {
   const restarted = createUpdates({ store: h.store, telegram: h.telegram, delivery: h.delivery, schedule, chatId: groupId, username: 'office_test_bot', flipperNames: h.flipperNames });
   await restarted.handleUpdate(text(h, 'Anna K'), now);
   expect(h.flipperNames(11)).toBe('Anna K');
+});
+
+it('ignores and clears a conversation older than one hour', async () => {
+  const h = harness();
+  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
+  h.store.set('conv:12', { kind: 'self_name' });
+  await h.updates.handleUpdate(text(h, 'thanks'), new Date(now.getTime() + 3_600_000));
+  await h.updates.handleUpdate(text(h, 'hello', 12), now);
+  expect(sent(h)).toEqual([{ chat: 11, text: PROMPT }]);
+  expect(h.flipperNames(11)).toBeUndefined(); expect(h.flipperNames(12)).toBeUndefined();
+  expect(h.store.get('conv:11')).toBeNull(); expect(h.store.get('conv:12')).toBeNull();
+});
+
+it('keeps a conversation younger than one hour, and /flipper after a stale one starts afresh', async () => {
+  const h = harness(); const later = new Date(now.getTime() + 3_599_000);
+  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
+  await h.updates.handleUpdate(text(h, 'Anna K'), later);
+  expect(h.flipperNames(11)).toBe('Anna K');
+  h.store.set('conv:11', { kind: 'self_name', at: at('07:00').toISOString() });
+  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
+  expect(h.store.get('conv:11')).toEqual({ kind: 'self_name', at: now.toISOString() });
+  await h.updates.handleUpdate(text(h, 'Anna B'), now);
+  expect(h.flipperNames(11)).toBe('Anna B');
+  expect(sent(h).map(s => s.text)).toEqual([PROMPT, expect.stringContaining('Saved: Anna K'), PROMPT, expect.stringContaining('Saved: Anna B')]);
 });
 
 it('ignores private text without a conversation and commands in other chats', async () => {

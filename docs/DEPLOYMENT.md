@@ -108,7 +108,7 @@ Useful keys in the `state` table:
 
 - `day:<YYYY-MM-DD>`: `phase`, `signup` (`messageId`, `closesAt`, `choices` keyed by Telegram user id with `{user, choice}` where `choice` is `checkin` or `duty`, and `rendered`, the signature of the last text sent), `assignment` (`helper`, `recipients` with frozen `flipperName`, `onDuty`, `messageId`, `confirmedAt`) and `issue`.
 - `op:signup:<YYYY-MM-DD>` and `op:assignment:<YYYY-MM-DD>`: the sign-up and assignment sends (status `sent`/`rejected`/`uncertain`, timestamps in UTC); `op:reminder:<YYYY-MM-DD>` is the 14:00 private reminder.
-- `flipper:<userId>`: the Flipper name registry, `{name, setBy, at}` (`setBy` is the user who set it, the person themselves or an admin). `conv:<userId>`: the private-chat conversation state while someone is entering a name or running the admin dialog (`null` or absent otherwise). `user:<userId>`: users who pressed `/start`, needed for the private reminder.
+- `flipper:<userId>`: the Flipper name registry, `{name, setBy, at}` (`setBy` is the user who set it, the person themselves or an admin). `conv:<userId>`: the private-chat conversation state while someone is entering a name or running the admin dialog (`null` or absent otherwise; `at` is when it last advanced, and a conversation older than one hour is ignored and cleared on the person's next message). `user:<userId>`: users who pressed `/start`, needed for the private reminder.
 - `offset`: the update cursor.
 
 The output contains participant names; treat it as private. Opening the database `readonly` is safe while the bot runs.

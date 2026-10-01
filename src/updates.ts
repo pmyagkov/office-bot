@@ -7,7 +7,7 @@ import { refreshAssignments } from './messages.js';
 import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { refreshSignups } from './signup.js';
 import { createTestFlow } from './test-flow.js';
-import { handlePrivateCallback, handlePrivateMessage, isAdminConv, type Conv, type Facts, type Reply } from './private-chat.js';
+import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type Reply } from './private-chat.js';
 type ReplyJob = { key: string; chatId: number; pages: string[]; markup?: Reply['markup']; done: boolean };
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
@@ -40,7 +40,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       const isAdmin = async (userId: number) => ['administrator', 'creator'].includes(await telegram.getMemberStatus(chatId, userId) ?? '');
       const facts: Facts = { admin: false };
       if (privateMessage && m.from) {
-        const conv = store.get<Conv | null>(`conv:${m.from.id}`) ?? undefined;
+        const conv = liveConv(store.get<Conv | null>(`conv:${m.from.id}`), now);
         if (command?.[1] === 'admin' || isAdminConv(conv) || m.users_shared) {
           facts.admin = await isAdmin(m.from.id);
           const picked = m.users_shared?.users[0];

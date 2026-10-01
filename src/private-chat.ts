@@ -4,7 +4,8 @@ import { escapeHtml } from './messages.js';
 import type { Store } from './store.js';
 import type { Participant } from './types.js';
 
-export type Conv = { kind: 'self_name' } | { kind: 'admin_person'; saved: number } | { kind: 'admin_name'; target: Participant; saved: number };
+// `at` is when the conversation was created or last advanced; it expires after an hour.
+export type Conv = ({ kind: 'self_name' } | { kind: 'admin_person'; saved: number } | { kind: 'admin_name'; target: Participant; saved: number }) & { at: string };
 export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove };
 export type Facts = { admin: boolean; targetIsMember?: boolean };
 type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
@@ -18,6 +19,16 @@ const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback
 const REMOVE: ReplyKeyboardRemove = { remove_keyboard: true };
 
 export const isAdminConv = (conv: Conv | null | undefined): conv is AdminConv => conv?.kind === 'admin_person' || conv?.kind === 'admin_name';
+// A conversation without a valid `at` (stored before expiry existed) counts as stale.
+export const liveConv = (conv: Conv | null | undefined, now: Date): Conv | undefined =>
+  conv && now.getTime() - Date.parse(conv.at) < 3_600_000 ? conv : undefined;
+// A stale conversation is cleared before the message is handled, so it is never resumed.
+function readConv(store: Store, key: string, now: Date): Conv | undefined {
+  const stored = store.get<Conv | null>(key);
+  const conv = liveConv(stored, now);
+  if (stored && !conv) store.set(key, null);
+  return conv;
+}
 
 // Admin rights are re-checked by the caller on every interaction; a non-admin in an admin state loses it.
 function deny(store: Store, key: string, conv: Conv | undefined): Reply {
@@ -38,7 +49,8 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   const shared = m.users_shared;
   if (!from || from.is_bot || m.chat.type !== 'private' || m.chat.id !== from.id || (text === undefined && !shared)) return undefined;
   const key = `conv:${from.id}`;
-  const conv = store.get<Conv | null>(key) ?? undefined;
+  const conv = readConv(store, key, now);
+  const at = now.toISOString();
   if (shared) {
     if (!isAdminConv(conv)) return undefined;
     if (!facts.admin) return deny(store, key, conv);
@@ -46,18 +58,18 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     if (shared.request_id !== 1 || shared.users.length !== 1) return undefined;
     const name = [picked.first_name, picked.last_name].filter(Boolean).join(' ') || `User ${picked.user_id}`;
     if (!facts.targetIsMember) {
-      store.set(key, { kind: 'admin_person', saved: conv.saved } satisfies Conv);
+      store.set(key, { kind: 'admin_person', saved: conv.saved, at } satisfies Conv);
       return { pages: [`${escapeHtml(name)} is not in the office group.`], markup: PICKER };
     }
     const target: Participant = { id: picked.user_id, name, ...(picked.username ? { username: picked.username } : {}) };
-    store.set(key, { kind: 'admin_name', target, saved: conv.saved } satisfies Conv);
+    store.set(key, { kind: 'admin_name', target, saved: conv.saved, at } satisfies Conv);
     return namePrompt(target, getFlipperName(store, target.id));
   }
   if (text === undefined) return undefined;
   const command = m.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@\w+)?(?:\s+(.*))?$/.exec(text) : null;
   if (text.startsWith('/')) {
     const markup = isAdminConv(conv) ? REMOVE : undefined;
-    const ask = (): Reply => { store.set(key, { kind: 'self_name' } satisfies Conv); return { pages: [PROMPT], markup }; };
+    const ask = (): Reply => { store.set(key, { kind: 'self_name', at } satisfies Conv); return { pages: [PROMPT], markup }; };
     switch (command?.[1]) {
       case 'start':
         if (command[2]?.trim() !== 'flipper') return undefined;
@@ -67,7 +79,7 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
       case 'admin':
         if (!facts.admin) return deny(store, key, conv);
         if (command[2]?.trim() !== 'flipper') return { pages: [MENU] };
-        store.set(key, { kind: 'admin_person', saved: 0 } satisfies Conv);
+        store.set(key, { kind: 'admin_person', saved: 0, at } satisfies Conv);
         return { pages: [PICK], markup: PICKER };
       case 'cancel':
         if (!conv) return undefined;
@@ -87,7 +99,7 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     const name = validateFlipperName(text);
     if (!name) return { pages: [INVALID] };
     setFlipperName(store, conv.target.id, name, from.id, now);
-    store.set(key, { kind: 'admin_person', saved: conv.saved + 1 } satisfies Conv);
+    store.set(key, { kind: 'admin_person', saved: conv.saved + 1, at } satisfies Conv);
     return { pages: [`Saved: ${escapeHtml(name)} for ${escapeHtml(conv.target.name)}.`], markup: PICKER };
   }
   if (conv?.kind !== 'self_name') return undefined;
@@ -99,13 +111,13 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
 }
 
 // `admin:back` from the name step returns to the picker without saving. Synchronous like handlePrivateMessage.
-export function handlePrivateCallback(store: Store, cb: CallbackQuery, _now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
+export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
   const chat = cb.message?.chat;
   if (cb.data !== 'admin:back' || cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
   const key = `conv:${cb.from.id}`;
-  const conv = store.get<Conv | null>(key) ?? undefined;
+  const conv = readConv(store, key, now);
   if (!facts.admin) return { text: 'Not available.', reply: isAdminConv(conv) ? deny(store, key, conv) : undefined };
   if (conv?.kind !== 'admin_name') return { text: 'Not available.' };
-  store.set(key, { kind: 'admin_person', saved: conv.saved } satisfies Conv);
+  store.set(key, { kind: 'admin_person', saved: conv.saved, at: now.toISOString() } satisfies Conv);
   return { text: 'Back', reply: { pages: [PICK], markup: PICKER } };
 }
