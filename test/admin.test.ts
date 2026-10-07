@@ -11,6 +11,7 @@ import { groupId, user } from './fixtures/telegram-updates.js';
 const now = at('09:30');
 const PICKER = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
 const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
+const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say <text> — post to the office group\n/admin say @username <text> — send one person a private message';
 const sent = (h: ReturnType<typeof harness>) => h.calls('sendMessage').map(c => ({ chat: c.payload.chat_id, text: c.payload.text, markup: c.payload.reply_markup }));
 const last = (h: ReturnType<typeof harness>) => sent(h).at(-1);
 function setup() {
@@ -30,7 +31,7 @@ it('/admin lists the command for an admin and refuses a member', async () => {
   await h.updates.handleUpdate(h.event.command('/admin', 11, 11), now);
   await h.updates.handleUpdate(h.event.command('/admin', 22, 22), now);
   expect(sent(h)).toEqual([
-    { chat: 11, text: 'Admin commands:\n/admin flipper — set Flipper names', markup: undefined },
+    { chat: 11, text: MENU, markup: undefined },
     { chat: 22, text: 'Not available.', markup: undefined },
   ]);
   expect(h.store.get('conv:22')).toBeUndefined();
@@ -205,7 +206,7 @@ it.each([
   ['plain text', (h: ReturnType<typeof harness>) => text(h, 'hello'), EXPIRED],
   ['/cancel', (h: ReturnType<typeof harness>) => h.event.command('/cancel', 11, 11), 'Cancelled.'],
   ['/flipper', (h: ReturnType<typeof harness>) => h.event.command('/flipper', 11, 11), 'How are you listed in Flipper? Send the name exactly as it appears there.'],
-  ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), 'Admin commands:\n/admin flipper — set Flipper names'],
+  ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), MENU],
 ])('an expired admin dialog answers %s once and removes the keyboard', async (_name, build, reply) => {
   const h = setup(); const later = new Date(now.getTime() + 3_600_000);
   await startDialog(h);

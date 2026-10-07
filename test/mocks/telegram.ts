@@ -6,6 +6,8 @@ export function mockTelegram() {
   const updates: Update[] = [];
   const members = new Map<number, string>();
   const failures = new Map<string, { code: number; retryAfter?: number }>();
+  // Chats that reject every message, the way Telegram answers someone who never pressed Start.
+  const blocked = new Set<number>();
   let nextId = 1;
   const transformer: Transformer = async (_previous, method, payload) => {
     const p = payload as unknown as Record<string, unknown>;
@@ -15,7 +17,9 @@ export function mockTelegram() {
     let result: unknown;
     switch (method) {
       case 'getUpdates': result = updates.splice(0, 100).filter(u => u.update_id >= Number(p.offset)); break;
-      case 'sendMessage': messages.set(nextId, p); result = { message_id: nextId++ }; break;
+      case 'sendMessage':
+        if (blocked.has(Number(p.chat_id))) return { ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' };
+        messages.set(nextId, p); result = { message_id: nextId++ }; break;
       case 'editMessageText': messages.set(Number(p.message_id), p); result = true; break;
       case 'getChatMember': {
         const id = Number(p.user_id); const status = members.get(id);
@@ -29,5 +33,5 @@ export function mockTelegram() {
     // This dynamic API boundary follows grammY's generic transformer contract.
     return { ok: true, result: result as never };
   };
-  return { calls, messages, updates, members, failures, transformer };
+  return { calls, messages, updates, members, failures, blocked, transformer };
 }

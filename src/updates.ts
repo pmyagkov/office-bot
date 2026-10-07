@@ -7,22 +7,19 @@ import { refreshAssignments } from './messages.js';
 import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { refreshSignups } from './signup.js';
 import { createTestFlow } from './test-flow.js';
-import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type Reply } from './private-chat.js';
-type ReplyJob = { key: string; chatId: number; pages: string[]; markup?: Reply['markup']; done: boolean };
+import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type PrivateContext, type Reply } from './private-chat.js';
+import { flushReplies as flush, queueReply } from './replies.js';
+import { findByUsername, rememberUsername } from './directory.js';
+import { parseSay, sayArgs } from './say.js';
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
   const tests = createTestFlow({ ...services, chooseIndex: randomInt });
-  async function flushReplies(now: Date) {
-    for (const reply of store.list<ReplyJob>('reply:')) {
-      if (reply.done) continue;
-      let pending = false;
-      for (let i = 0; i < reply.pages.length; i++) {
-        const markup = i === reply.pages.length - 1 ? reply.markup : undefined;
-        const result = await delivery.deliver(`${reply.key}:${i}`, now, () => telegram.sendMessage(reply.chatId, reply.pages[i], markup));
-        if (result.kind === 'rejected' && result.code === 429) { pending = true; break; }
-      }
-      if (!pending) { reply.done = true; store.set(`reply:${reply.key}`, reply); }
-    }
+  const ctx: PrivateContext = { groupChatId: chatId, botUsername: username };
+  const flushReplies = (now: Date) => flush(store, telegram, delivery, now);
+  // `pages` answer the chat the update came from; `extra` is addressed elsewhere and keyed apart.
+  function queue(key: string, chatId: number, reply: Reply) {
+    if (reply.pages.length) queueReply(store, key, { chatId, pages: reply.pages, markup: reply.markup });
+    reply.extra?.forEach((job, index) => queueReply(store, `${key}:to${index}`, job));
   }
   return {
     flushReplies,
@@ -48,6 +45,16 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
             const status = await telegram.getMemberStatus(chatId, picked.user_id);
             facts.targetIsMember = status !== null && status !== 'left' && status !== 'kicked';
           }
+          if (facts.admin && command?.[1] === 'admin') {
+            const say = sayArgs(command[3]);
+            const parsed = say === undefined ? undefined : parseSay(say);
+            const target = parsed && !('error' in parsed) ? parsed.target : undefined;
+            const id = target ? findByUsername(store, target) : undefined;
+            if (id !== undefined) {
+              const status = await telegram.getMemberStatus(chatId, id);
+              facts.sayTarget = { id, member: status !== null && status !== 'left' && status !== 'kicked' };
+            }
+          }
         }
       } else if (cb?.data?.startsWith('admin:')) facts.admin = await isAdmin(cb.from.id);
       let answer: PressResult | undefined;
@@ -59,19 +66,20 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
             const result = handlePrivateCallback(store, cb, now, facts);
             if (result) {
               answer = { text: result.text };
-              if (result.reply?.pages.length) { const key = `callback:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: cb.from.id, pages: result.reply.pages, markup: result.reply.markup, done: false } satisfies ReplyJob); }
+              if (result.reply) queue(`callback:${update.update_id}`, cb.from.id, result.reply);
             }
           }
           if (!answer) { const text = confirmAssignment(store, cb, now); if (text) answer = { text }; }
         }
         if (cb && !answer) answer = { text: 'Not available.' };
         if (m && privateMessage) {
+          rememberUsername(store, m.from!.id, m.from!.username, now);
           let reply: Reply | undefined;
           if (command?.[1] === 'start' && command[3]?.trim() !== 'flipper') {
             store.set(`user:${m.from.id}`, { id: m.from.id, startedAt: now.toISOString() });
             reply = { pages: ["You're ready to receive a private reminder at 14:00 (Europe/Belgrade) if you're assigned badge duty and haven't confirmed it yet. Sign up and confirm in the group."] };
-          } else reply = handlePrivateMessage(store, m, now, facts);
-          if (reply?.pages.length) { const key = `command:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: m.chat.id, pages: reply.pages, markup: reply.markup, done: false } satisfies ReplyJob); }
+          } else reply = handlePrivateMessage(store, m, now, facts, ctx);
+          if (reply) queue(`command:${update.update_id}`, m.chat.id, reply);
         } else if (m && command && addressed) {
           let pages: string[] = [];
           if (m.chat.id === chatId) {
@@ -84,7 +92,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
               case 'help': case 'start': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n/flipper — set your Flipper name (in a private chat)\n\nConfirmations are self-reported."]; break;
             }
           }
-          if (pages.length) { const key = `command:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: m.chat.id, pages, done: false } satisfies ReplyJob); }
+          if (pages.length) queueReply(store, `command:${update.update_id}`, { chatId: m.chat.id, pages });
         }
         store.set('offset', update.update_id + 1);
       });

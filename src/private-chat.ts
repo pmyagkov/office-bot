@@ -1,18 +1,25 @@
 import type { CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove } from 'grammy/types';
 import { getFlipperName, setFlipperName, validateFlipperName } from './flipper.js';
 import { escapeHtml } from './messages.js';
+import type { Outgoing } from './replies.js';
+import { nudgeInGroup, parseSay, sayArgs, sayToGroup, sayToPerson, UNKNOWN_TARGET } from './say.js';
 import type { Store } from './store.js';
 import type { Participant } from './types.js';
 
 // `at` is when the conversation was created or last advanced; it expires after an hour.
 export type Conv = ({ kind: 'self_name' } | { kind: 'admin_person'; saved: number } | { kind: 'admin_name'; target: Participant; saved: number }) & { at: string };
-export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove };
-export type Facts = { admin: boolean; targetIsMember?: boolean };
+// `pages` go back to the person who wrote; `extra` is everything addressed elsewhere.
+export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove; extra?: Outgoing[] };
+// `sayTarget` is the resolved recipient of `/admin say @username`; absent when the bot has
+// never seen that username. Both it and `targetIsMember` are looked up before the transaction.
+export type Facts = { admin: boolean; targetIsMember?: boolean; sayTarget?: { id: number; member: boolean } };
+// What the handler needs to address chats other than the one it is answering in.
+export type PrivateContext = { groupChatId: number; botUsername: string };
 type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
 
 const PROMPT = 'How are you listed in Flipper? Send the name exactly as it appears there.';
 const INVALID = "That doesn't look right. Send the name (1–64 characters, one line).";
-const MENU = 'Admin commands:\n/admin flipper — set Flipper names';
+const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say <text> — post to the office group\n/admin say @username <text> — send one person a private message';
 const PICK = 'Choose a person.';
 const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
 const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
@@ -47,7 +54,7 @@ function namePrompt(target: Participant, current: string | undefined): Reply {
 
 // Synchronous on purpose: callers run it inside store.atomic together with the update cursor.
 // `m` is a private message from a human; commands addressed to other bots are filtered out by the caller.
-export function handlePrivateMessage(store: Store, m: Message, now: Date, facts: Facts): Reply | undefined {
+export function handlePrivateMessage(store: Store, m: Message, now: Date, facts: Facts, ctx: PrivateContext): Reply | undefined {
   const from = m.from;
   const text = m.text;
   const shared = m.users_shared;
@@ -81,11 +88,22 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         store.set(`user:${from.id}`, { id: from.id, startedAt: now.toISOString() });
         return ask();
       case 'flipper': return ask();
-      case 'admin':
+      case 'admin': {
         if (!facts.admin) return deny(store, key, conv);
-        if (command[2]?.trim() !== 'flipper') return { pages: [MENU], markup };
+        const args = command[2]?.trim() ?? '';
+        const say = sayArgs(args);
+        if (say !== undefined) {
+          const parsed = parseSay(say);
+          if ('error' in parsed) return { pages: [parsed.error], markup };
+          if (!parsed.target) return { pages: [], markup, extra: [sayToGroup(ctx.groupChatId, from.id, parsed.message, markup)] };
+          if (!facts.sayTarget) return { pages: [], markup, extra: [nudgeInGroup(ctx.groupChatId, from.id, parsed.target, ctx.botUsername, UNKNOWN_TARGET(parsed.target), markup)] };
+          if (!facts.sayTarget.member) return { pages: [`${escapeHtml(parsed.target)} is not in the office group.`], markup };
+          return { pages: [], markup, extra: [sayToPerson(facts.sayTarget.id, from.id, parsed.target, parsed.message, ctx.groupChatId, ctx.botUsername, markup)] };
+        }
+        if (args !== 'flipper') return { pages: [MENU], markup };
         store.set(key, { kind: 'admin_person', saved: 0, at } satisfies Conv);
         return { pages: [PICK], markup: PICKER };
+      }
       case 'cancel':
         if (!conv && !expiredAdmin) return undefined;
         store.set(key, null);
