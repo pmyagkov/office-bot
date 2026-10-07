@@ -13,7 +13,7 @@ function setup() {
 it.each(['/admin say', '/admin say   ', '/admin say @alice'])('%s answers with the usage line and posts nothing', async (text) => {
   const h = setup();
   await h.updates.handleUpdate(h.event.command(text, 11, 11), now);
-  expect(sent(h)).toEqual([{ chat: 11, text: 'Usage: /admin say <text> or /admin say @username <text>' }]);
+  expect(sent(h)).toEqual([{ chat: 11, text: 'Usage: /admin say &lt;text&gt; or /admin say @username &lt;text&gt;' }]);
 });
 
 it('/admin say posts to the office group and tells the admin', async () => {
@@ -21,6 +21,16 @@ it('/admin say posts to the office group and tells the admin', async () => {
   await h.updates.handleUpdate(h.event.command('/admin say Lift is broken today', 11, 11), now);
   expect(sent(h)).toEqual([
     { chat: groupId, text: 'Lift is broken today' },
+    { chat: 11, text: 'Sent to the office group.' },
+  ]);
+});
+
+// An announcement worth sending through the bot usually has more than one line.
+it('/admin say posts a message with several lines', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.command('/admin say Lift is broken.\nUse the stairs.', 11, 11), now);
+  expect(sent(h)).toEqual([
+    { chat: groupId, text: 'Lift is broken.\nUse the stairs.' },
     { chat: 11, text: 'Sent to the office group.' },
   ]);
 });
@@ -116,6 +126,19 @@ it('a username its owner has given up is no longer resolved to them', async () =
   expect(sent(h).slice(-2)).toEqual([
     { chat: groupId, text: expect.stringContaining("I can't reach @alice privately") },
     { chat: 11, text: "I don't know @alice yet. I left a note in the office group instead." },
+  ]);
+});
+
+// Every reply goes out with parse_mode HTML, and Telegram answers 400 for a tag it does not
+// know — so the fixed copy must not contain a bare `<`. `mock.messages` only records what was
+// accepted, unlike `calls`, which records the attempt.
+it('the admin menu and the usage line are accepted by Telegram, not just attempted', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.command('/admin', 11, 11), now);
+  await h.updates.handleUpdate(h.event.command('/admin say', 11, 11), now);
+  expect([...h.mock.messages.values()].map(payload => payload.text)).toEqual([
+    expect.stringContaining('Admin commands:'),
+    expect.stringContaining('Usage:'),
   ]);
 });
 

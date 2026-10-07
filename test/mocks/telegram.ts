@@ -1,5 +1,17 @@
 import type { Transformer } from 'grammy';
 import type { Update } from 'grammy/types';
+// Telegram accepts a fixed list of tags in HTML mode and answers 400 for anything else,
+// including a literal `<` that was meant as text. Everything the bot sends goes out as HTML,
+// so the mock holds it to the same rule instead of accepting any string.
+const ALLOWED = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'span', 'tg-spoiler', 'tg-emoji', 'a', 'code', 'pre', 'blockquote'];
+const TAG = new RegExp(`^</?(?:${ALLOWED.join('|')})(?:\\s[^<>]*)?>`, 'i');
+export function unsupportedMarkup(text: string): string | undefined {
+  for (let i = text.indexOf('<'); i !== -1; i = text.indexOf('<', i + 1)) {
+    if (!TAG.test(text.slice(i))) return text.slice(i, i + 24);
+  }
+  return undefined;
+}
+
 export function mockTelegram() {
   const calls: { method: string; payload: Record<string, unknown> }[] = [];
   const messages = new Map<number, Record<string, unknown>>();
@@ -12,6 +24,10 @@ export function mockTelegram() {
   const transformer: Transformer = async (_previous, method, payload) => {
     const p = payload as unknown as Record<string, unknown>;
     calls.push({ method, payload: p });
+    if (p.parse_mode === 'HTML') {
+      const bad = unsupportedMarkup(String(p.text ?? ''));
+      if (bad) return { ok: false, error_code: 400, description: `Bad Request: unsupported start tag "${bad}"` };
+    }
     const failure = failures.get(method);
     if (failure) return { ok: false, error_code: failure.code, description: 'Simulated API rejection', parameters: { retry_after: failure.retryAfter } };
     let result: unknown;

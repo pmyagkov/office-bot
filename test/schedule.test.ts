@@ -108,6 +108,18 @@ it('an interactive test run leaves a real plan untouched', async () => {
   expect(h.store.get('plan:11')).toMatchObject({ choice: 'duty' });
 });
 
+// An inline keyboard cannot also remove the reply keyboard an expired admin dialog left on
+// screen, so /schedule has to send the notice separately instead of silently keeping it.
+it('/schedule after an expired admin dialog takes the picker away first', async () => {
+  const h = setup(); h.mock.members.set(11, 'administrator');
+  await h.updates.handleUpdate(h.event.command('/admin flipper', 11, 11), now);
+  await h.updates.handleUpdate(h.event.command('/schedule', 11, 11), new Date(now.getTime() + 3_600_000));
+  expect(sent(h).slice(-2)).toEqual([
+    { chat: 11, text: 'That admin session expired. Send /admin flipper to start again.', markup: { remove_keyboard: true } },
+    { chat: 11, text: `${INTRO}\n\nNothing is planned.`, markup: KEYBOARD },
+  ]);
+});
+
 it('Clear plan takes the plan away', async () => {
   const h = setup();
   await h.updates.handleUpdate(h.event.callback('plan:duty', 11, 5, 11), now);

@@ -21,7 +21,8 @@ type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
 
 const PROMPT = 'How are you listed in Flipper? Send the name exactly as it appears there.';
 const INVALID = "That doesn't look right. Send the name (1–64 characters, one line).";
-const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say <text> — post to the office group\n/admin say @username <text> — send one person a private message';
+// Replies are sent as HTML, so the placeholders in the copy are escaped like any other text.
+const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const PICK = 'Choose a person.';
 const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
 const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
@@ -80,7 +81,7 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     return namePrompt(target, getFlipperName(store, target.id));
   }
   if (text === undefined) return undefined;
-  const command = m.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@\w+)?(?:\s+(.*))?$/.exec(text) : null;
+  const command = m.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@\w+)?(?:\s+(.*))?$/s.exec(text) : null;
   if (text.startsWith('/')) {
     const markup = isAdminConv(conv) || expiredAdmin ? REMOVE : undefined;
     const ask = (): Reply => { store.set(key, { kind: 'self_name', at } satisfies Conv); return { pages: [PROMPT], markup }; };
@@ -91,7 +92,12 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         if (command[2]?.trim() === 'flipper') return ask();
         return { pages: [privateHelp(facts.admin)], markup };
       case 'help': return { pages: [privateHelp(facts.admin)], markup };
-      case 'schedule': return { pages: [planText(getPlan(store, from.id, now))], markup: PLAN_KEYBOARD };
+      case 'schedule': {
+        // The plan panel carries an inline keyboard, which cannot also take away the picker an
+        // expired admin dialog left on screen, so that notice is sent as its own message first.
+        const panel = { chatId: from.id, pages: [planText(getPlan(store, from.id, now))], markup: PLAN_KEYBOARD };
+        return expiredAdmin ? { pages: [EXPIRED], markup: REMOVE, extra: [panel] } : { pages: panel.pages, markup: PLAN_KEYBOARD };
+      }
       case 'flipper': return ask();
       case 'admin': {
         if (!facts.admin) return deny(store, key, conv);

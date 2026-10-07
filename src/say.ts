@@ -3,7 +3,7 @@
 import { escapeHtml } from './messages.js';
 import type { Outgoing } from './replies.js';
 
-export const SAY_USAGE = 'Usage: /admin say <text> or /admin say @username <text>';
+export const SAY_USAGE = 'Usage: /admin say &lt;text&gt; or /admin say @username &lt;text&gt;';
 export type SayCommand = { target?: string; message: string };
 // The arguments of `/admin say …`, or undefined when the admin asked for something else.
 export function sayArgs(args: string | undefined): string | undefined {

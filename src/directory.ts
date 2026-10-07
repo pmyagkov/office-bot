@@ -14,7 +14,8 @@ export function rememberUsername(store: Store, userId: number, username: string 
   if (!username) return;
   const handle = username.toLowerCase();
   const previous = store.get<string | null>(handleKey(userId));
-  if (previous && previous !== handle) store.set(key(previous), null);
+  // Only give up the old handle if it still points here: somebody else may have taken it.
+  if (previous && previous !== handle && store.get<Entry | null>(key(previous))?.id === userId) store.set(key(previous), null);
   store.set(handleKey(userId), handle);
   store.set(key(handle), { id: userId, at: now.toISOString() } satisfies Entry);
 }

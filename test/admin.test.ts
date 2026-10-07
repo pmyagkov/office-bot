@@ -11,7 +11,7 @@ import { groupId, user } from './fixtures/telegram-updates.js';
 const now = at('09:30');
 const PICKER = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
 const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
-const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say <text> — post to the office group\n/admin say @username <text> — send one person a private message';
+const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const sent = (h: ReturnType<typeof harness>) => h.calls('sendMessage').map(c => ({ chat: c.payload.chat_id, text: c.payload.text, markup: c.payload.reply_markup }));
 const last = (h: ReturnType<typeof harness>) => sent(h).at(-1);
 function setup() {
