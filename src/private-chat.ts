@@ -1,5 +1,6 @@
 import type { CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove } from 'grammy/types';
 import { getFlipperName, setFlipperName, validateFlipperName } from './flipper.js';
+import { privateHelp } from './help.js';
 import { escapeHtml } from './messages.js';
 import type { Outgoing } from './replies.js';
 import { nudgeInGroup, parseSay, sayArgs, sayToGroup, sayToPerson, UNKNOWN_TARGET } from './say.js';
@@ -84,9 +85,11 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     const ask = (): Reply => { store.set(key, { kind: 'self_name', at } satisfies Conv); return { pages: [PROMPT], markup }; };
     switch (command?.[1]) {
       case 'start':
-        if (command[2]?.trim() !== 'flipper') return undefined;
+        // Pressing Start is also what makes private reminders deliverable, so it is recorded.
         store.set(`user:${from.id}`, { id: from.id, startedAt: now.toISOString() });
-        return ask();
+        if (command[2]?.trim() === 'flipper') return ask();
+        return { pages: [privateHelp(facts.admin)], markup };
+      case 'help': return { pages: [privateHelp(facts.admin)], markup };
       case 'flipper': return ask();
       case 'admin': {
         if (!facts.admin) return deny(store, key, conv);

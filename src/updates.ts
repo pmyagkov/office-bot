@@ -11,6 +11,7 @@ import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, typ
 import { flushReplies as flush, queueReply } from './replies.js';
 import { findByUsername, rememberUsername } from './directory.js';
 import { parseSay, sayArgs } from './say.js';
+import { PRIVATE_ONLY, privateOnlyNudge } from './help.js';
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
   const tests = createTestFlow({ ...services, chooseIndex: randomInt });
@@ -38,7 +39,8 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       const facts: Facts = { admin: false };
       if (privateMessage && m.from) {
         const conv = liveConv(store.get<Conv | null>(`conv:${m.from.id}`), now);
-        if (command?.[1] === 'admin' || isAdminConv(conv) || m.users_shared) {
+        // /start and /help list the admin commands only for admins, so they need the lookup too.
+        if (['admin', 'start', 'help'].includes(command?.[1] ?? '') || isAdminConv(conv) || m.users_shared) {
           facts.admin = await isAdmin(m.from.id);
           const picked = m.users_shared?.users[0];
           if (facts.admin && isAdminConv(conv) && picked) {
@@ -74,11 +76,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
         if (cb && !answer) answer = { text: 'Not available.' };
         if (m && privateMessage) {
           rememberUsername(store, m.from!.id, m.from!.username, now);
-          let reply: Reply | undefined;
-          if (command?.[1] === 'start' && command[3]?.trim() !== 'flipper') {
-            store.set(`user:${m.from.id}`, { id: m.from.id, startedAt: now.toISOString() });
-            reply = { pages: ["You're ready to receive a private reminder at 14:00 (Europe/Belgrade) if you're assigned badge duty and haven't confirmed it yet. Sign up and confirm in the group."] };
-          } else reply = handlePrivateMessage(store, m, now, facts, ctx);
+          const reply = handlePrivateMessage(store, m, now, facts, ctx);
           if (reply) queue(`command:${update.update_id}`, m.chat.id, reply);
         } else if (m && command && addressed) {
           let pages: string[] = [];
@@ -89,7 +87,12 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
               case 'today': pages = renderToday(store, day, schedule.zone); break;
               case 'stats': pages = [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')]; break;
               case 'history': pages = [renderHistory(store, 10, schedule.zone)]; break;
-              case 'help': case 'start': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n/flipper — set your Flipper name (in a private chat)\n\nConfirmations are self-reported."]; break;
+              case 'help': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n/flipper — set your Flipper name (in a private chat)\n\nConfirmations are self-reported."]; break;
+              default:
+                // Everything personal belongs in the private chat; an unknown command stays
+                // unanswered, because it is probably addressed to another bot.
+                if ((PRIVATE_ONLY as readonly string[]).includes(command[1])) pages = [privateOnlyNudge(`/${command[1]}`, username)];
+                break;
             }
           }
           if (pages.length) queueReply(store, `command:${update.update_id}`, { chatId: m.chat.id, pages });

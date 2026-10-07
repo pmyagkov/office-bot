@@ -281,10 +281,11 @@ it('the self flow and cancel still work next to the admin dialog', async () => {
   expect(h.flipperNames(11)).toBe('Own Name');
 });
 
-it('ignores admin input from bots and from group chats', async () => {
+it('ignores admin input from bots, and answers /admin in the group with the private-chat nudge', async () => {
   const h = setup();
   const bot = h.event.command('/admin', 13, 13);
   await h.updates.handleUpdate({ ...bot, message: { ...bot.message!, from: { ...user(13), is_bot: true } } }, now);
-  await h.updates.handleUpdate(h.event.command('/admin', groupId, 11), now);
   expect(sent(h)).toEqual([]);
+  await h.updates.handleUpdate(h.event.command('/admin', groupId, 11), now);
+  expect(sent(h)).toEqual([{ chat: groupId, text: expect.stringContaining('/admin only works in my private chat.'), markup: undefined }]);
 });
