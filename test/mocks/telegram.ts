@@ -17,6 +17,9 @@ export function mockTelegram() {
   const messages = new Map<number, Record<string, unknown>>();
   const updates: Update[] = [];
   const members = new Map<number, string>();
+  // The handle Telegram reports for a member right now, which need not be the one the bot
+  // last saw in an update.
+  const usernames = new Map<number, string>();
   const failures = new Map<string, { code: number; retryAfter?: number }>();
   // Chats that reject every message, the way Telegram answers someone who never pressed Start.
   const blocked = new Set<number>();
@@ -40,7 +43,8 @@ export function mockTelegram() {
       case 'getChatMember': {
         const id = Number(p.user_id); const status = members.get(id);
         if (status === undefined) return { ok: false, error_code: 400, description: 'Bad Request: user not found' };
-        result = { status, user: { id, is_bot: false, first_name: `Person ${id}` } }; break;
+        const username = usernames.get(id);
+        result = { status, user: { id, is_bot: false, first_name: `Person ${id}`, ...(username ? { username } : {}) } }; break;
       }
       case 'answerCallbackQuery': case 'setMyCommands': result = true; break;
       case 'getMe': result = { id: 123456, is_bot: true, first_name: 'Test', username: 'office_test_bot' }; break;
@@ -49,5 +53,5 @@ export function mockTelegram() {
     // This dynamic API boundary follows grammY's generic transformer contract.
     return { ok: true, result: result as never };
   };
-  return { calls, messages, updates, members, failures, blocked, transformer };
+  return { calls, messages, updates, members, usernames, failures, blocked, transformer };
 }

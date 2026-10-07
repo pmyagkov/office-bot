@@ -270,6 +270,20 @@ it('a temporary membership lookup failure still lets the same runtime step close
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// Reading the command list does not end the Flipper dialog, so it must not take the picker
+// away either: a keyboard-less admin whose next message is still read as a name saves it by
+// accident.
+it('/help during a live Flipper dialog leaves the picker and the dialog alone', async () => {
+  const h = setup();
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
+  await h.updates.handleUpdate(h.event.command('/help', 11, 11), now);
+  expect(last(h)?.markup).toBeUndefined();
+  expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_name' });
+  await h.updates.handleUpdate(text(h, 'Anna K'), now);
+  expect(h.flipperNames(22)).toBe('Anna K');
+});
+
 it('the self flow and cancel still work next to the admin dialog', async () => {
   const h = setup();
   await startDialog(h);

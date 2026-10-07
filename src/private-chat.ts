@@ -83,15 +83,21 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   if (text === undefined) return undefined;
   const command = m.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@\w+)?(?:\s+(.*))?$/s.exec(text) : null;
   if (text.startsWith('/')) {
+    // A command that replaces or ends the Flipper dialog takes its picker away with it
+    // (`markup`). One that only reports something leaves a running dialog alone and clears
+    // nothing but the keyboard an expired dialog left on screen (`keep`) — otherwise the admin
+    // loses the picker while the dialog is still waiting, and their next message is saved as
+    // the Flipper name of whoever was picked.
     const markup = isAdminConv(conv) || expiredAdmin ? REMOVE : undefined;
+    const keep = expiredAdmin ? REMOVE : undefined;
     const ask = (): Reply => { store.set(key, { kind: 'self_name', at } satisfies Conv); return { pages: [PROMPT], markup }; };
     switch (command?.[1]) {
       case 'start':
         // Pressing Start is also what makes private reminders deliverable, so it is recorded.
         store.set(`user:${from.id}`, { id: from.id, startedAt: now.toISOString() });
         if (command[2]?.trim() === 'flipper') return ask();
-        return { pages: [privateHelp(facts.admin)], markup };
-      case 'help': return { pages: [privateHelp(facts.admin)], markup };
+        return { pages: [privateHelp(facts.admin)], markup: keep };
+      case 'help': return { pages: [privateHelp(facts.admin)], markup: keep };
       case 'schedule': {
         // The plan panel carries an inline keyboard, which cannot also take away the picker an
         // expired admin dialog left on screen, so that notice is sent as its own message first.
@@ -104,9 +110,6 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         const args = command[2]?.trim() ?? '';
         const say = sayArgs(args);
         if (say !== undefined) {
-          // say leaves a running Flipper dialog alone, so it only clears a keyboard that an
-          // expired dialog left behind.
-          const keep = expiredAdmin ? REMOVE : undefined;
           const parsed = parseSay(say);
           if ('error' in parsed) return { pages: [parsed.error], markup: keep };
           if (!parsed.target) return { pages: [], markup: keep, extra: [sayToGroup(ctx.groupChatId, from.id, parsed.message, keep)] };
@@ -114,7 +117,7 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
           if (!facts.sayTarget.member) return { pages: [`${escapeHtml(parsed.target)} is not in the office group.`], markup: keep };
           return { pages: [], markup: keep, extra: [sayToPerson(facts.sayTarget.id, from.id, parsed.target, parsed.message, ctx.groupChatId, ctx.botUsername, keep)] };
         }
-        if (args !== 'flipper') return { pages: [MENU], markup };
+        if (args !== 'flipper') return { pages: [MENU], markup: keep };
         store.set(key, { kind: 'admin_person', saved: 0, at } satisfies Conv);
         return { pages: [PICK], markup: PICKER };
       }

@@ -52,10 +52,15 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
             const say = sayArgs(command[3]);
             const parsed = say === undefined ? undefined : parseSay(say);
             const target = parsed && !('error' in parsed) ? parsed.target : undefined;
-            const id = target ? findByUsername(store, target) : undefined;
+            const wanted = target?.replace(/^@/, '').toLowerCase();
+            const id = wanted ? findByUsername(store, wanted) : undefined;
             if (id !== undefined) {
-              const status = await telegram.getMemberStatus(chatId, id);
-              facts.sayTarget = { id, member: status !== null && status !== 'left' && status !== 'kicked' };
+              const member = await telegram.getMember(chatId, id);
+              // A handle Telegram no longer reports for this person belongs to somebody else
+              // now, or to nobody; either way the index is stale and nothing is sent privately.
+              if (member && member.username?.toLowerCase() === wanted) {
+                facts.sayTarget = { id, member: member.status !== 'left' && member.status !== 'kicked' };
+              }
             }
           }
         }

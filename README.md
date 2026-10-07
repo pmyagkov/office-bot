@@ -26,7 +26,7 @@ Group admins register names for others: `/admin` in the private chat lists their
 
 The bot publishes both lists to Telegram as scoped menus, so the group only suggests the group commands. A private-chat command typed in the group is answered once with a link to the bot's private chat, and `/start` or `/help` there lists everything available — the `/admin` line only for admins.
 
-**`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name.
+**`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name. Group membership is checked when the plan is made, not when it is applied — the same way a button press at 09:30 is not re-checked at 10:00.
 
 **`/admin say <text>`** posts in the group through the bot; **`/admin say @username <text>`** writes to one person. Someone the bot cannot reach privately — never pressed Start, or blocked it — is nudged in the group instead, and the admin is told which happened.
 

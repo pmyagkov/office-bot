@@ -38,7 +38,8 @@ export function nudgeInGroup(groupChatId: number, adminId: number, target: strin
   const name = escapeHtml(target);
   return { chatId: groupChatId,
     pages: [`⚠️ I can't reach ${name} privately.\n\n${name}, please open @${escapeHtml(botUsername)} and press Start so I can write to you directly.`],
-    onSent: { chatId: adminId, pages: [`${reason} I left a note in the office group instead.`], markup } };
+    onSent: { chatId: adminId, pages: [`${reason} I left a note in the office group instead.`], markup },
+    onFailed: { chatId: adminId, pages: [`${reason} The office group rejected the note, too.`], markup } };
 }
 
 export const UNKNOWN_TARGET = (target: string) => `I don't know ${escapeHtml(target)} yet.`;

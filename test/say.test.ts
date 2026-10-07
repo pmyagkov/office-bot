@@ -7,6 +7,7 @@ const sent = (h: ReturnType<typeof harness>) => h.calls('sendMessage').map(c => 
 function setup() {
   const h = harness();
   h.mock.members.set(11, 'administrator'); h.mock.members.set(22, 'member');
+  h.mock.usernames.set(22, 'alice');
   return h;
 }
 
@@ -140,6 +141,24 @@ it('the admin menu and the usage line are accepted by Telegram, not just attempt
     expect.stringContaining('Admin commands:'),
     expect.stringContaining('Usage:'),
   ]);
+});
+
+// The index can only ever be as fresh as the last update the bot saw. The membership lookup
+// the send needs anyway reports the handle the person has right now, so it has the last word.
+it('a handle Telegram no longer reports for that person does not reach them', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.command('/start', 22, 22, 'alice'), now);
+  h.mock.usernames.set(22, 'bob');
+  await h.updates.handleUpdate(h.event.command('/admin say @alice Your badge is ready', 11, 11), now);
+  expect(sent(h).filter(s => s.text === 'Your badge is ready')).toEqual([]);
+  expect(sent(h).at(-1)).toEqual({ chat: 11, text: "I don't know @alice yet. I left a note in the office group instead." });
+});
+
+it('a nudge the office group rejects is still reported to the admin', async () => {
+  const h = setup();
+  h.mock.blocked.add(groupId);
+  await h.updates.handleUpdate(h.event.command('/admin say @ghost Your badge is ready', 11, 11), now);
+  expect(sent(h).at(-1)).toEqual({ chat: 11, text: "I don't know @ghost yet. The office group rejected the note, too." });
 });
 
 it('a non-admin cannot use /admin say', async () => {

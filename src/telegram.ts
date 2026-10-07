@@ -46,8 +46,16 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
       await api.setMyCommands(PRIVATE_MENU, { scope: { type: 'all_private_chats' } });
       await api.setMyCommands(GROUP_MENU, { scope: { type: 'all_group_chats' } });
     },
-    async getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
-      try { return (await api.getChatMember(chatId, userId)).status; }
+    getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
+      return this.getMember(chatId, userId).then(member => member?.status ?? null);
+    },
+    // The handle Telegram reports here is the one the person has now, which the username index
+    // cannot know. `/admin say @name` uses it to make sure it is writing to the right person.
+    async getMember(chatId: number, userId: number): Promise<{ status: ChatMember['status']; username?: string } | null> {
+      try {
+        const member = await api.getChatMember(chatId, userId);
+        return { status: member.status, ...(member.user.username ? { username: member.user.username } : {}) };
+      }
       catch (error) {
         if (error instanceof GrammyError && error.error_code === 400) {
           const description = error.description.toLowerCase();

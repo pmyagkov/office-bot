@@ -25,6 +25,26 @@ it('reopens a command job for a deliberate retry without touching a frozen assig
     expect(store.get('reply:command:30')).toMatchObject({ done: false }); expect(store.get('day:2026-09-30')).toEqual({ assignment: { helper: 11, recipients: [22] } });
   } finally { store.close(); }
 });
+// Reply jobs now also address other chats (`:toN`), chain acknowledgements (`:sent`, `:failed`)
+// and carry notices about dropped plans. Every one of them has to be reopenable.
+it.each(['command:30:to0', 'command:30:to0:failed', 'plan-dropped:2026-09-30:11'])('reopens the %s reply job for a deliberate retry', (replyKey) => {
+  const store = openStore(':memory:');
+  try {
+    store.set(`op:${replyKey}:0`, { key: `${replyKey}:0`, status: 'uncertain' });
+    store.set(`reply:${replyKey}`, { key: replyKey, done: true });
+    recoverOperation(store, `${replyKey}:0`, 'retry');
+    expect(store.get(`op:${replyKey}:0`)).toMatchObject({ status: 'prepared' });
+    expect(store.get(`reply:${replyKey}`)).toMatchObject({ done: false });
+  } finally { store.close(); }
+});
+it('leaves a frozen sign-up operation alone: it is not a reply job', () => {
+  const store = openStore(':memory:');
+  try {
+    store.set('op:signup:2026-09-30', { key: 'signup:2026-09-30', status: 'uncertain' });
+    recoverOperation(store, 'signup:2026-09-30', 'retry');
+    expect(store.get('reply:signup')).toBeUndefined();
+  } finally { store.close(); }
+});
 it('reopens a callback reply job for a deliberate retry', () => {
   const store = openStore(':memory:');
   try {
