@@ -20,7 +20,9 @@ it('invalidates the previous heartbeat before attempting startup', async () => {
 it('runs the actual loop, reports health, redacts polling errors and shuts down gracefully', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'office-health-')); const server = await fakeServer(); const heartbeat = join(dir, 'heartbeat.json');
   const ok = (result: unknown) => ({ ok: true, result });
-  server.responses.push(ok({ id: 123456, username: 'office_test_bot' }), ok({ url: '' }), ok({ id: -100123, type: 'supergroup' }), ok({ status: 'administrator' }), 'disconnect');
+  // getMe, getWebhookInfo, getChat, getChatMember, the two scoped setMyCommands, then a dead
+  // socket for the first getUpdates.
+  server.responses.push(ok({ id: 123456, username: 'office_test_bot' }), ok({ url: '' }), ok({ id: -100123, type: 'supergroup' }), ok({ status: 'administrator' }), ok(true), ok(true), 'disconnect');
   const env = { PATH: process.env.PATH, TELEGRAM_BOT_TOKEN: '123456:dummy_dummy_dummy', TELEGRAM_CHAT_ID: '-100123', DATABASE_PATH: join(dir, 'state.db'), HEARTBEAT_PATH: heartbeat, TEST_API_ROOT: server.apiRoot };
   const child = fork(new URL('./harness/run-process.mjs', import.meta.url), { env, silent: true });
   let output = ''; child.stdout!.on('data', d => { output += String(d); }); child.stderr!.on('data', d => { output += String(d); });

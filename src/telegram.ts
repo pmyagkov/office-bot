@@ -2,6 +2,21 @@ import { Api, GrammyError, type Transformer } from 'grammy';
 import type { ChatMember, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update } from 'grammy/types';
 import type { SendResult } from './types.js';
 
+const PRIVATE_MENU = [
+  { command: 'start', description: 'What I do and which commands exist' },
+  { command: 'flipper', description: 'Set the name you are listed under in Flipper' },
+  { command: 'schedule', description: 'Sign up for the next sign-up in advance' },
+  { command: 'cancel', description: 'Stop the current dialog' },
+  { command: 'help', description: 'Show the command list' },
+];
+const GROUP_MENU = [
+  { command: 'today', description: "Today's status" },
+  { command: 'stats', description: "This week's confirmed check-ins" },
+  { command: 'history', description: 'Recent confirmations' },
+  { command: 'test', description: 'Interactive test run with separate statistics' },
+  { command: 'help', description: 'How the office sign-up works' },
+];
+
 export async function send<T>(action: () => Promise<T>): Promise<SendResult<T>> {
   try { return { kind: 'sent', value: await action() }; }
   catch (error) {
@@ -25,6 +40,11 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
       return send(async () => (await api.sendMessage(chatId, text, {
         parse_mode: 'HTML', reply_markup: markup, link_preview_options: { is_disabled: true },
       })).message_id);
+    },
+    // Scoped menus: what Telegram suggests in the group is exactly what works there.
+    async publishCommands(): Promise<void> {
+      await api.setMyCommands(PRIVATE_MENU, { scope: { type: 'all_private_chats' } });
+      await api.setMyCommands(GROUP_MENU, { scope: { type: 'all_group_chats' } });
     },
     async getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
       try { return (await api.getChatMember(chatId, userId)).status; }

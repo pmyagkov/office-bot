@@ -22,7 +22,13 @@ Group admins register names for others: `/admin` in the private chat lists their
 ## Commands
 
 - Group: `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, `/help`.
-- Private chat: `/start`, `/flipper`, `/cancel`, `/admin` (group admins only).
+- Private chat: `/start`, `/flipper`, `/schedule`, `/cancel`, `/help`, `/admin` (group admins only).
+
+The bot publishes both lists to Telegram as scoped menus, so the group only suggests the group commands. A private-chat command typed in the group is answered once with a link to the bot's private chat, and `/start` or `/help` there lists everything available — the `/admin` line only for admins.
+
+**`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name.
+
+**`/admin say <text>`** posts in the group through the bot; **`/admin say @username <text>`** writes to one person. Someone the bot cannot reach privately — never pressed Start, or blocked it — is nudged in the group instead, and the admin is told which happened.
 
 Stats count confirmed duties only, by the assignment's Belgrade date. The records are self-reports, not readings from access-control hardware.
 

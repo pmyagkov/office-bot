@@ -15,6 +15,9 @@ export async function run(config: Config, telegram: TelegramPort = createTelegra
   if (chat.type !== 'group' && chat.type !== 'supergroup') throw Error('Configured chat must be a group');
   const membership = await telegram.api.getChatMember(config.chatId, identity.id);
   if (!['administrator', 'creator', 'member'].includes(membership.status)) throw Error('Bot cannot participate in the configured group');
+  // A menu Telegram could not accept is not worth refusing to start over.
+  try { await telegram.publishCommands(); }
+  catch { console.error(JSON.stringify({ event: 'commands_publish_failed' })); }
   const store = openStore(config.database);
   const runtime = createRuntime(config, store, telegram, clock, identity.username);
   let stopping = false;
