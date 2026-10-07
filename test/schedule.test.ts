@@ -14,15 +14,28 @@ const KEYBOARD = { inline_keyboard: [
 ] };
 
 const answer = (h: ReturnType<typeof harness>) => h.calls('answerCallbackQuery').at(-1)!.payload.text;
+// Only people in the office group may put themselves into its sign-up.
+function setup() {
+  const h = harness();
+  h.mock.members.set(11, 'member'); h.mock.members.set(22, 'member');
+  return h;
+}
+
+it('somebody outside the office group cannot plan a sign-up', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.callback('plan:duty', 33, 5, 33), now);
+  expect(answer(h)).toBe('Not available.');
+  expect(h.store.get('plan:33')).toBeUndefined();
+});
 
 it('/schedule offers both choices and reports that nothing is planned', async () => {
-  const h = harness();
+  const h = setup();
   await h.updates.handleUpdate(h.event.command('/schedule', 11, 11), now);
   expect(last(h)).toEqual({ chat: 11, text: `${INTRO}\n\nNothing is planned.`, markup: KEYBOARD });
 });
 
 it('On duty is stored for the next sign-up and shown back', async () => {
-  const h = harness();
+  const h = setup();
   await h.updates.handleUpdate(h.event.callback('plan:duty', 11, 5, 11), now);
   expect(answer(h)).toBe("You're on duty at the next sign-up");
   expect(last(h)).toEqual({ chat: 11, text: `${INTRO}\n\nPlanned: 🛡 On duty.`, markup: KEYBOARD });
@@ -30,7 +43,7 @@ it('On duty is stored for the next sign-up and shown back', async () => {
 });
 
 it('a planned check-in without a Flipper name is refused', async () => {
-  const h = harness();
+  const h = setup();
   await h.updates.handleUpdate(h.event.callback('plan:checkin', 11, 5, 11), now);
   expect(answer(h)).toBe('Set your Flipper name first');
   expect(last(h)).toEqual({ chat: 11, text: 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then plan again.', markup: KEYBOARD });
@@ -38,14 +51,14 @@ it('a planned check-in without a Flipper name is refused', async () => {
 });
 
 it('a check-in can be planned once the Flipper name exists', async () => {
-  const h = harness(); h.register(11, 'Anna K');
+  const h = setup(); h.register(11, 'Anna K');
   await h.updates.handleUpdate(h.event.callback('plan:checkin', 11, 5, 11), now);
   expect(answer(h)).toBe("You're signed up for the next check-in");
   expect(h.store.get('plan:11')).toMatchObject({ choice: 'checkin' });
 });
 
 it('a plan made the night before is in the sign-up message the moment it opens', async () => {
-  const h = harness(); h.register(22, 'Anna K');
+  const h = setup(); h.register(22, 'Anna K');
   await h.updates.handleUpdate(h.event.callback('plan:duty', 11, 5, 11), now);
   await h.updates.handleUpdate(h.event.callback('plan:checkin', 22, 5, 22), now);
   await h.scheduler.tick(at('09:00'));
@@ -54,14 +67,14 @@ it('a plan made the night before is in the sign-up message the moment it opens',
 });
 
 it('a plan is used once and is gone afterwards', async () => {
-  const h = harness();
+  const h = setup();
   await h.updates.handleUpdate(h.event.callback('plan:duty', 11, 5, 11), now);
   await h.scheduler.tick(at('09:00'));
   expect(h.store.get('plan:11')).toBeNull();
 });
 
 it('a plan older than seven days is dropped instead of applied', async () => {
-  const h = harness();
+  const h = setup();
   h.store.set('plan:11', { user: { id: 11, name: 'Person 11' }, choice: 'duty', at: at('09:00', '2026-09-22').toISOString() });
   await h.scheduler.tick(at('09:00'));
   expect(h.day().signup!.choices).toEqual({});
@@ -69,7 +82,7 @@ it('a plan older than seven days is dropped instead of applied', async () => {
 });
 
 it('a planned check-in whose Flipper name disappeared is dropped with a private notice', async () => {
-  const h = harness(); h.register(11, 'Anna K');
+  const h = setup(); h.register(11, 'Anna K');
   await h.updates.handleUpdate(h.event.callback('plan:checkin', 11, 5, 11), now);
   h.store.set('flipper:11', null);
   await h.scheduler.tick(at('09:00'));
@@ -80,7 +93,7 @@ it('a planned check-in whose Flipper name disappeared is dropped with a private 
 
 // Plans are stored next to the real days, and a test run works on a store of its own.
 it('an interactive test run leaves a real plan untouched', async () => {
-  const h = harness();
+  const h = setup();
   const clock = () => at('18:00', '2026-09-29');
   const config = { token: '123456:dummy_dummy_dummy', chatId: groupId, database: ':memory:', heartbeat: '', schedule };
   const runtime = createRuntime(config, h.store, h.telegram, clock, 'office_test_bot');
@@ -96,7 +109,7 @@ it('an interactive test run leaves a real plan untouched', async () => {
 });
 
 it('Clear plan takes the plan away', async () => {
-  const h = harness();
+  const h = setup();
   await h.updates.handleUpdate(h.event.callback('plan:duty', 11, 5, 11), now);
   await h.updates.handleUpdate(h.event.callback('plan:clear', 11, 5, 11), now);
   expect(answer(h)).toBe('Your plan was removed');

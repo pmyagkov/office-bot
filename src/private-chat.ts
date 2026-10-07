@@ -14,7 +14,7 @@ export type Conv = ({ kind: 'self_name' } | { kind: 'admin_person'; saved: numbe
 export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove; extra?: Outgoing[] };
 // `sayTarget` is the resolved recipient of `/admin say @username`; absent when the bot has
 // never seen that username. Both it and `targetIsMember` are looked up before the transaction.
-export type Facts = { admin: boolean; targetIsMember?: boolean; sayTarget?: { id: number; member: boolean } };
+export type Facts = { admin: boolean; member?: boolean; targetIsMember?: boolean; sayTarget?: { id: number; member: boolean } };
 // What the handler needs to address chats other than the one it is answering in.
 export type PrivateContext = { groupChatId: number; botUsername: string };
 type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
@@ -98,12 +98,15 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         const args = command[2]?.trim() ?? '';
         const say = sayArgs(args);
         if (say !== undefined) {
+          // say leaves a running Flipper dialog alone, so it only clears a keyboard that an
+          // expired dialog left behind.
+          const keep = expiredAdmin ? REMOVE : undefined;
           const parsed = parseSay(say);
-          if ('error' in parsed) return { pages: [parsed.error], markup };
-          if (!parsed.target) return { pages: [], markup, extra: [sayToGroup(ctx.groupChatId, from.id, parsed.message, markup)] };
-          if (!facts.sayTarget) return { pages: [], markup, extra: [nudgeInGroup(ctx.groupChatId, from.id, parsed.target, ctx.botUsername, UNKNOWN_TARGET(parsed.target), markup)] };
-          if (!facts.sayTarget.member) return { pages: [`${escapeHtml(parsed.target)} is not in the office group.`], markup };
-          return { pages: [], markup, extra: [sayToPerson(facts.sayTarget.id, from.id, parsed.target, parsed.message, ctx.groupChatId, ctx.botUsername, markup)] };
+          if ('error' in parsed) return { pages: [parsed.error], markup: keep };
+          if (!parsed.target) return { pages: [], markup: keep, extra: [sayToGroup(ctx.groupChatId, from.id, parsed.message, keep)] };
+          if (!facts.sayTarget) return { pages: [], markup: keep, extra: [nudgeInGroup(ctx.groupChatId, from.id, parsed.target, ctx.botUsername, UNKNOWN_TARGET(parsed.target), keep)] };
+          if (!facts.sayTarget.member) return { pages: [`${escapeHtml(parsed.target)} is not in the office group.`], markup: keep };
+          return { pages: [], markup: keep, extra: [sayToPerson(facts.sayTarget.id, from.id, parsed.target, parsed.message, ctx.groupChatId, ctx.botUsername, keep)] };
         }
         if (args !== 'flipper') return { pages: [MENU], markup };
         store.set(key, { kind: 'admin_person', saved: 0, at } satisfies Conv);
@@ -143,9 +146,10 @@ const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs y
 const PLAN_PRESSED: Record<Choice, string> ={ checkin: "You're signed up for the next check-in", duty: "You're on duty at the next sign-up" };
 
 // The `/schedule` keyboard. A plan replaces the previous one; it is never added to.
-function handlePlanPress(store: Store, cb: CallbackQuery, now: Date): { text: string; reply?: Reply } {
+function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } {
   const action = cb.data!.slice('plan:'.length);
   const show = (plan: Plan | undefined) => ({ pages: [planText(plan)], markup: PLAN_KEYBOARD });
+  if (!facts.member) return { text: 'Not available.' };
   if (action === 'clear') { store.set(`plan:${cb.from.id}`, null); return { text: 'Your plan was removed', reply: show(undefined) }; }
   if (action !== 'checkin' && action !== 'duty') return { text: 'Not available.' };
   if (action === 'checkin' && !getFlipperName(store, cb.from.id)) {
@@ -159,7 +163,7 @@ function handlePlanPress(store: Store, cb: CallbackQuery, now: Date): { text: st
 export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
   const chat = cb.message?.chat;
   if (cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
-  if (cb.data?.startsWith('plan:')) return handlePlanPress(store, cb, now);
+  if (cb.data?.startsWith('plan:')) return handlePlanPress(store, cb, now, facts);
   if (cb.data !== 'admin:back') return undefined;
   const key = `conv:${cb.from.id}`;
   const { conv, expiredAdmin } = readConv(store, key, now);

@@ -91,6 +91,34 @@ it('/admin say @username reaches somebody known only from a sign-up press', asyn
   ]);
 });
 
+// Unlike /flipper or /cancel, say does not end the Flipper dialog, so it must not take its
+// keyboard away either.
+it('/admin say in the middle of the Flipper dialog leaves the picker alone', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.command('/admin flipper', 11, 11), now);
+  await h.updates.handleUpdate(h.event.command('/admin say Lift is broken today', 11, 11), now);
+  const ack = h.calls('sendMessage').at(-1)!.payload;
+  expect(ack).toMatchObject({ chat_id: 11, text: 'Sent to the office group.' });
+  expect(ack.reply_markup).toBeUndefined();
+  expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_person' });
+});
+
+// Telegram usernames can be given up and taken over by somebody else, so a handle the bot
+// last saw on a person who has since renamed must stop resolving to them.
+it('a username its owner has given up is no longer resolved to them', async () => {
+  const h = setup();
+  await h.scheduler.tick(at('09:00'));
+  h.register(22);
+  await h.updates.handleUpdate(h.event.press('2026-09-30', 'checkin', 22, h.day().signup!.messageId!, undefined, undefined, 'alice'), now);
+  await h.updates.handleUpdate(h.event.command('/start', 22, 22, 'bob'), now);
+  await h.updates.handleUpdate(h.event.command('/admin say @alice Your badge is ready', 11, 11), now);
+  expect(sent(h).filter(s => s.text === 'Your badge is ready')).toEqual([]);
+  expect(sent(h).slice(-2)).toEqual([
+    { chat: groupId, text: expect.stringContaining("I can't reach @alice privately") },
+    { chat: 11, text: "I don't know @alice yet. I left a note in the office group instead." },
+  ]);
+});
+
 it('a non-admin cannot use /admin say', async () => {
   const h = setup();
   await h.updates.handleUpdate(h.event.command('/admin say Lift is broken today', 22, 22), now);

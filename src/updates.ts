@@ -59,6 +59,12 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
           }
         }
       } else if (cb?.data?.startsWith('admin:')) facts.admin = await isAdmin(cb.from.id);
+      else if (cb?.data?.startsWith('plan:')) {
+        // The group's own buttons are only reachable by members; this keyboard is in a private
+        // chat, so membership has to be checked here instead.
+        const status = await telegram.getMemberStatus(chatId, cb.from.id);
+        facts.member = status !== null && status !== 'left' && status !== 'kicked';
+      }
       let answer: PressResult | undefined;
       store.atomic(() => {
         answer = tests.apply(update, now);
@@ -87,7 +93,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
               case 'today': pages = renderToday(store, day, schedule.zone); break;
               case 'stats': pages = [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')]; break;
               case 'history': pages = [renderHistory(store, 10, schedule.zone)]; break;
-              case 'help': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n/flipper — set your Flipper name (in a private chat)\n\nConfirmations are self-reported."]; break;
+              case 'help': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n\nIn my private chat: /flipper to set your Flipper name, /schedule to sign up for the next sign-up in advance, /help for the full list.\n\nConfirmations are self-reported."]; break;
               default:
                 // Everything personal belongs in the private chat; an unknown command stays
                 // unanswered, because it is probably addressed to another bot.
