@@ -1,11 +1,12 @@
 import type { CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove } from 'grammy/types';
 import { getFlipperName, setFlipperName, validateFlipperName } from './flipper.js';
 import { privateHelp } from './help.js';
+import { getPlan, PLAN_KEYBOARD, planText, setPlan, type Plan } from './plans.js';
 import { escapeHtml } from './messages.js';
 import type { Outgoing } from './replies.js';
 import { nudgeInGroup, parseSay, sayArgs, sayToGroup, sayToPerson, UNKNOWN_TARGET } from './say.js';
 import type { Store } from './store.js';
-import type { Participant } from './types.js';
+import type { Choice, Participant } from './types.js';
 
 // `at` is when the conversation was created or last advanced; it expires after an hour.
 export type Conv = ({ kind: 'self_name' } | { kind: 'admin_person'; saved: number } | { kind: 'admin_name'; target: Participant; saved: number }) & { at: string };
@@ -90,6 +91,7 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         if (command[2]?.trim() === 'flipper') return ask();
         return { pages: [privateHelp(facts.admin)], markup };
       case 'help': return { pages: [privateHelp(facts.admin)], markup };
+      case 'schedule': return { pages: [planText(getPlan(store, from.id, now))], markup: PLAN_KEYBOARD };
       case 'flipper': return ask();
       case 'admin': {
         if (!facts.admin) return deny(store, key, conv);
@@ -137,10 +139,28 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   return { pages: [`Saved: ${escapeHtml(name)}. Go back to the group and press Check me in.`] };
 }
 
+const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then plan again.';
+const PLAN_PRESSED: Record<Choice, string> ={ checkin: "You're signed up for the next check-in", duty: "You're on duty at the next sign-up" };
+
+// The `/schedule` keyboard. A plan replaces the previous one; it is never added to.
+function handlePlanPress(store: Store, cb: CallbackQuery, now: Date): { text: string; reply?: Reply } {
+  const action = cb.data!.slice('plan:'.length);
+  const show = (plan: Plan | undefined) => ({ pages: [planText(plan)], markup: PLAN_KEYBOARD });
+  if (action === 'clear') { store.set(`plan:${cb.from.id}`, null); return { text: 'Your plan was removed', reply: show(undefined) }; }
+  if (action !== 'checkin' && action !== 'duty') return { text: 'Not available.' };
+  if (action === 'checkin' && !getFlipperName(store, cb.from.id)) {
+    return { text: 'Set your Flipper name first', reply: { pages: [NEEDS_FLIPPER], markup: PLAN_KEYBOARD } };
+  }
+  const user: Participant ={ id: cb.from.id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), ...(cb.from.username ? { username: cb.from.username } : {}) };
+  return { text: PLAN_PRESSED[action], reply: show(setPlan(store, user, action, now)) };
+}
+
 // `admin:back` from the name step returns to the picker without saving. Synchronous like handlePrivateMessage.
 export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
   const chat = cb.message?.chat;
-  if (cb.data !== 'admin:back' || cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
+  if (cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
+  if (cb.data?.startsWith('plan:')) return handlePlanPress(store, cb, now);
+  if (cb.data !== 'admin:back') return undefined;
   const key = `conv:${cb.from.id}`;
   const { conv, expiredAdmin } = readConv(store, key, now);
   if (expiredAdmin) return { text: 'Not available.', reply: expired() };
