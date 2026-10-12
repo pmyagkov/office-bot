@@ -100,7 +100,7 @@ it('an interactive test run leaves a real plan untouched', async () => {
   const step = async (...updates: Update[]) => { h.mock.updates.push(...updates); await runtime.step(); };
   const find = (part: string) => [...h.mock.messages.entries()].find(([, p]) => String(p.text).includes(part))!;
   await step(h.event.callback('plan:duty', 11, 5, 11));
-  await step(h.event.command('/test'));
+  await step(h.event.dm('/test'));
   const panel = find('<b>Test flow</b>');
   const open = (panel[1].reply_markup as InlineKeyboardMarkup).inline_keyboard.flat().find(b => b.text === 'Open test sign-up')!;
   await step(h.event.callback('callback_data' in open ? open.callback_data : '', 11, panel[0], groupId));

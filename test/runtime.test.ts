@@ -26,7 +26,8 @@ it('runs an entire day through the production polling/input path', async () => {
   now = at('10:00'); await runtime.step(); expect(h.day().assignment?.recipients.map(p => p.id)).toEqual([22]);
   const assignment = h.day().assignment!.messageId!; const click = h.event.click('2026-09-30', 11, assignment); h.mock.updates.push(click, click);
   now = at('13:59'); await runtime.step(); now = at('14:00'); await runtime.step();
-  h.mock.updates.push(h.event.command('/stats')); await runtime.step();
+  // Asked privately by 22, so chat 11 staying empty still means the helper got no reminder.
+  h.mock.updates.push(h.event.dm('/stats', 22)); await runtime.step();
   expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('1 duties');
   expect(h.calls('editMessageText').filter(c => c.payload.message_id === assignment)).toHaveLength(1);

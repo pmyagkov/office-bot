@@ -11,12 +11,24 @@ import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, typ
 import { flushReplies as flush, queueReply } from './replies.js';
 import { findByUsername, rememberUsername } from './directory.js';
 import { parseSay, sayArgs } from './say.js';
-import { PRIVATE_ONLY, privateOnlyNudge } from './help.js';
+import { COMMANDS, privateOnlyNudge } from './help.js';
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
   const tests = createTestFlow({ ...services, chooseIndex: randomInt });
   const ctx: PrivateContext = { groupChatId: chatId, botUsername: username };
   const flushReplies = (now: Date) => flush(store, telegram, delivery, now);
+  // The commands that only read state and answer with text. `/test` is here too: it is driven
+  // from the private chat, and its panel and messages still go to the group.
+  function reports(command: RegExpExecArray, update: Update, now: Date): string[] {
+    const day = localTime(now, schedule.zone).day;
+    switch (command[1]) {
+      case 'test': return tests.start(update, now);
+      case 'today': return renderToday(store, day, schedule.zone);
+      case 'stats': return [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')];
+      case 'history': return [renderHistory(store, 10, schedule.zone)];
+      default: return [];
+    }
+  }
   // `pages` answer the chat the update came from; `extra` is addressed elsewhere and keyed apart.
   function queue(key: string, chatId: number, reply: Reply) {
     if (reply.pages.length) queueReply(store, key, { chatId, pages: reply.pages, markup: reply.markup });
@@ -88,26 +100,14 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
         if (cb && !answer) answer = { text: 'Not available.' };
         if (m && privateMessage) {
           rememberUsername(store, m.from!.id, m.from!.username, now);
-          const reply = handlePrivateMessage(store, m, now, facts, ctx);
+          // Dialogs and personal settings first; the reports are commands without a dialog.
+          const reply = handlePrivateMessage(store, m, now, facts, ctx) ?? (command ? { pages: reports(command, update, now) } : undefined);
           if (reply) queue(`command:${update.update_id}`, m.chat.id, reply);
-        } else if (m && command && addressed) {
-          let pages: string[] = [];
-          if (m.chat.id === chatId) {
-            const day = localTime(now, schedule.zone).day;
-            switch (command[1]) {
-              case 'test': pages = tests.start(update, now); break;
-              case 'today': pages = renderToday(store, day, schedule.zone); break;
-              case 'stats': pages = [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')]; break;
-              case 'history': pages = [renderHistory(store, 10, schedule.zone)]; break;
-              case 'help': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n\nIn my private chat: /flipper to set your Flipper name, /schedule to sign up for the next sign-up in advance, /help for the full list.\n\nConfirmations are self-reported."]; break;
-              default:
-                // Everything personal belongs in the private chat; an unknown command stays
-                // unanswered, because it is probably addressed to another bot.
-                if ((PRIVATE_ONLY as readonly string[]).includes(command[1])) pages = [privateOnlyNudge(`/${command[1]}`, username)];
-                break;
-            }
-          }
-          if (pages.length) queueReply(store, `command:${update.update_id}`, { chatId: m.chat.id, pages });
+        } else if (m && command && addressed && m.chat.id === chatId && (COMMANDS as readonly string[]).includes(command[1])) {
+          // Nothing the bot owns is answered in the group: a command there is replaced by one
+          // pointer to the private chat. An unknown command stays unanswered, because it is
+          // probably addressed to another bot.
+          queueReply(store, `command:${update.update_id}`, { chatId: m.chat.id, pages: [privateOnlyNudge(`/${command[1]}`, username)] });
         }
         store.set('offset', update.update_id + 1);
       });

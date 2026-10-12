@@ -24,7 +24,7 @@ it('suppresses reminders after confirmation', async () => {
 it('records a blocked private chat without a group fallback', async () => {
   const h = await setup(); h.mock.failures.set('sendMessage', { code: 403 }); await h.scheduler.tick(at('14:00')); await h.scheduler.tick(at('14:10'));
   expect(h.calls('sendMessage')).toHaveLength(3); expect(h.store.get('op:reminder:2026-09-30')).toMatchObject({ status: 'rejected', code: 403 });
-  h.mock.failures.clear(); await h.updates.handleUpdate(h.event.command('/today'), at('14:11'));
+  h.mock.failures.clear(); await h.updates.handleUpdate(h.event.dm('/today'), at('14:11'));
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('403');
 });
 it('does not send yesterday’s reminder when publication crosses local midnight', async () => {

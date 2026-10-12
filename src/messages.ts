@@ -17,7 +17,7 @@ export function names(people: Participant[], budget = 2500): string {
     if (length + part.length > budget) break;
     parts.push(part); length += part.length + 2;
   }
-  return parts.join(', ') + (parts.length < people.length ? ` … and ${people.length - parts.length} more (see /today for the full list).` : '');
+  return parts.join(', ') + (parts.length < people.length ? ` … and ${people.length - parts.length} more (see /today in my private chat for the full list).` : '');
 }
 // Recipients are listed by their frozen Flipper name and never tagged.
 export const recipientLine = (user: Participant) => `• ${escapeHtml(user.flipperName ?? displayName(user))}`;
@@ -28,7 +28,7 @@ export function recipientLines(people: Participant[], budget = 2500): string {
     if (length + line.length > budget) break;
     lines.push(line); length += line.length + 1;
   }
-  return lines.join('\n') + (lines.length < people.length ? `\n… and ${people.length - lines.length} more (see /today for the full list).` : '');
+  return lines.join('\n') + (lines.length < people.length ? `\n… and ${people.length - lines.length} more (see /today in my private chat for the full list).` : '');
 }
 export function confirmKeyboard(day: string): InlineKeyboardMarkup {
   return { inline_keyboard: [[{ text: "I've checked everyone in", callback_data: `done:${day}` }]] };

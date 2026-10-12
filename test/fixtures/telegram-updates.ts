@@ -7,6 +7,10 @@ export function events() {
     command(text: string, chatId = groupId, actor = 11, username?: string): Update {
       return { update_id: next++, message: { message_id: next, date: 1790751600, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, from: user(actor, undefined, username), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } };
     },
+    // Every command lives in the bot's private chat, where the chat id is the person's own.
+    dm(text: string, actor = 11, username?: string): Update {
+      return this.command(text, actor, actor, username);
+    },
     click(day: string, actor: number, messageId: number, chatId = groupId): Update {
       return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor), chat_instance: 'test', data: `done:${day}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Assignment' } } };
     },

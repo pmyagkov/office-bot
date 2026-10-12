@@ -4,18 +4,18 @@ import type { SendResult } from './types.js';
 
 const PRIVATE_MENU = [
   { command: 'start', description: 'What I do and which commands exist' },
+  { command: 'help', description: 'Show the command list' },
   { command: 'flipper', description: 'Set the name you are listed under in Flipper' },
   { command: 'schedule', description: 'Sign up for the next sign-up in advance' },
-  { command: 'cancel', description: 'Stop the current dialog' },
-  { command: 'help', description: 'Show the command list' },
-];
-const GROUP_MENU = [
   { command: 'today', description: "Today's status" },
   { command: 'stats', description: "This week's confirmed check-ins" },
   { command: 'history', description: 'Recent confirmations' },
   { command: 'test', description: 'Interactive test run with separate statistics' },
-  { command: 'help', description: 'How the office sign-up works' },
+  { command: 'cancel', description: 'Stop the current dialog' },
 ];
+// Empty on purpose: no command is answered in the group, so Telegram must not suggest one
+// there. This scope wins over the default one, whatever BotFather was told.
+const GROUP_MENU: { command: string; description: string }[] = [];
 
 export async function send<T>(action: () => Promise<T>): Promise<SendResult<T>> {
   try { return { kind: 'sent', value: await action() }; }

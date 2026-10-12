@@ -21,12 +21,11 @@ Group admins register names for others: `/admin` in the private chat lists their
 
 ## Commands
 
-- Group: `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, `/help`.
-- Private chat: `/start`, `/flipper`, `/schedule`, `/cancel`, `/help`, `/admin` (group admins only).
+**Every command works in the bot's private chat and nowhere else:** `/start`, `/help`, `/flipper`, `/schedule`, `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, `/cancel`, and `/admin` for group admins.
 
-The bot publishes both lists to Telegram as scoped menus, so the group only suggests the group commands. A private-chat command typed in the group is answered once with a link to the bot's private chat, and `/start` or `/help` there lists everything available — the `/admin` line only for admins.
+The group is for the sign-up message, the assignment and their buttons. A command typed there is answered once with a link to the private chat and does nothing else; a command the bot does not own stays unanswered, because it is probably addressed to another bot. Telegram's own command menu is published for private chats only and deliberately empty for groups, so nothing is suggested there in the first place. `/start` and `/help` list everything available — the `/admin` line only for admins.
 
-**`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name. Group membership is checked when the plan is made, not when it is applied — the same way a button press at 09:30 is not re-checked at 10:00.
+**`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name. Whether you are in the group is checked when you make the plan; if you leave the group before the sign-up opens, the plan is still applied — exactly as a button pressed at 09:30 still counts when the helper is drawn at 10:00.
 
 **`/admin say <text>`** posts in the group through the bot; **`/admin say @username <text>`** writes to one person. Someone the bot cannot reach privately — never pressed Start, or blocked it — is nudged in the group instead, and the admin is told which happened.
 
@@ -34,7 +33,7 @@ Stats count confirmed duties only, by the assignment's Belgrade date. The record
 
 ## Try it in the real group
 
-`/test` posts a **[TEST]** control panel that walks through sign-up, closing, the reminder, confirmation and stats with labelled messages. Only the starter controls it, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
+`/test`, sent in the private chat, posts a **[TEST]** control panel in the group that walks through sign-up, closing, the reminder, confirmation and stats with labelled messages. It is a rehearsal of the group's day, so its messages belong in the group. Only the starter controls it, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
 
 ## Local setup
 

@@ -31,14 +31,14 @@ function setup(time = '18:00') {
     return h.event.callback('callback_data' in data! ? data.callback_data : '', actor, message[0], groupId);
   }
   async function assign() {
-    h.register(22); await step(h.event.command('/test')); await step(button('Open test sign-up'));
+    h.register(22); await step(h.event.dm('/test')); await step(button('Open test sign-up'));
     await step(press('checkin', 22), press('duty', 11)); await step(button('Close & choose helper'));
     return find('badge duty today')!;
   }
   return { ...h, step, find, panel, signup, signupSends, assignmentSends, keyboard, button, press, assign, time: (value: string) => { now = at(value); }, restart: () => { runtime = createRuntime(config, h.store, h.telegram, () => now, 'office_test_bot'); } };
 }
 it('runs the manual flow through production polling, with real confirmation and separate statistics', async () => {
-  const h = setup(); await h.step(h.event.command('/test@office_test_bot'));
+  const h = setup(); await h.step(h.event.dm('/test@office_test_bot'));
   expect(h.signup()).toBeUndefined(); expect(h.panel()[1].text).toContain('[TEST]');
   expect(h.panel()[1].text).toContain('sign-up'); expect(h.panel()[1].text).not.toMatch(/poll/i);
   await h.step(h.button('Open test sign-up'));
@@ -63,20 +63,20 @@ it('runs the manual flow through production polling, with real confirmation and 
   await h.step(h.button('Show test stats'));
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('1 duties');
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('[TEST]');
-  await h.step(h.event.command('/stats'));
+  await h.step(h.event.dm('/stats'));
   expect(h.calls('sendMessage').at(-1)?.payload.text).not.toContain('1 duties');
   expect(h.store.list('day:')).toEqual([]);
   await h.step(h.button('End test'));
   expect(h.panel()[1].text).toContain('Test ended');
 });
 it('limits control to the starter and original panel, deduplicates steps and survives restart', async () => {
-  const h = setup(); await h.step(h.event.command('/test', 11), h.event.command('/test@another_bot'));
-  expect(h.calls('sendMessage')).toHaveLength(0);
-  await h.step(h.event.command('/test'));
+  const h = setup(); await h.step(h.event.command('/test@another_bot'), h.event.command('/test', groupId, 11));
+  expect(h.calls('sendMessage').filter(c => String(c.payload.text).includes('[TEST]'))).toHaveLength(0);
+  await h.step(h.event.dm('/test'));
   await h.step(h.button('Open test sign-up', 22)); await h.step(h.button('Open test sign-up', 11, h.panel(), -100999));
   const forged = h.button('Open test sign-up'); forged.callback_query!.message!.message_id = 999;
   await h.step(forged); expect(h.signupSends()).toHaveLength(0);
-  await h.step(h.event.command('/test', groupId, 22));
+  await h.step(h.event.dm('/test', 22));
   expect([...h.mock.messages.values()].filter(p => String(p.text).includes('<b>Test flow</b>'))).toHaveLength(1);
   const open = h.button('Open test sign-up'); await h.step(open); h.restart(); await h.step(open);
   expect(h.signupSends()).toHaveLength(1);
@@ -85,7 +85,7 @@ it('limits control to the starter and original panel, deduplicates steps and sur
   expect(h.assignmentSends()).toHaveLength(1);
 });
 it('ends an unfinished test, removes its sign-up buttons and rejects old controls', async () => {
-  const h = setup(); await h.step(h.event.command('/test')); const open = h.button('Open test sign-up');
+  const h = setup(); await h.step(h.event.dm('/test')); const open = h.button('Open test sign-up');
   await h.step(open); const close = h.button('Close & choose helper'); const late = h.press('duty', 11);
   await h.step(h.button('End test'));
   expect(h.keyboard(h.signup()!)).toEqual([]); expect(h.signup()![1].text).toContain('🔒 Sign-up closed\n\nTest ended.');
@@ -105,7 +105,7 @@ it('shows blocked reminders, never retries them blindly, and expires abandoned r
   expect((h.mock.messages.get(assignment[0])!.reply_markup as InlineKeyboardMarkup).inline_keyboard).toEqual([]);
 });
 it('restores delivered panel and assignment identities before consuming queued callbacks after a crash', async () => {
-  const h = setup(); await h.step(h.event.command('/test')); const open = h.button('Open test sign-up');
+  const h = setup(); await h.step(h.event.dm('/test')); const open = h.button('Open test sign-up');
   const session = h.store.list<TestSession>('test-session:')[0]; delete session.panelId; h.store.set(`test-session:${session.id}`, session);
   h.restart(); await h.step(open); expect(h.signupSends()).toHaveLength(1);
   h.register(22); await h.step(h.press('checkin', 22), h.press('duty', 11)); await h.step(h.button('Close & choose helper'));
@@ -122,7 +122,7 @@ it('suppresses the manual reminder when confirmation is already queued in the sa
   expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
 });
 it('keeps the scheduled sign-up and statistics independent while a test runs in the morning', async () => {
-  const h = setup('09:05'); await h.step(); await h.step(h.event.command('/test')); await h.step(h.button('Open test sign-up'));
+  const h = setup('09:05'); await h.step(); await h.step(h.event.dm('/test')); await h.step(h.button('Open test sign-up'));
   const normal = h.mock.messages.get(h.day().signup!.messageId!)!;
   expect(String(normal.text)).not.toContain('[TEST]'); expect(h.signupSends()).toHaveLength(1);
   h.register(22); await h.step(h.press('checkin', 22), h.press('duty', 11)); await h.step(h.button('Close & choose helper'));
@@ -133,21 +133,21 @@ it('keeps the scheduled sign-up and statistics independent while a test runs in 
   expect(h.day().assignment).toBeUndefined(); expect(h.panel()[1].text).toContain('Selected helper');
 });
 it('does not repeat an uncertain sign-up delivery after restart, and reports the problem', async () => {
-  const h = setup(); await h.step(h.event.command('/test')); h.mock.failures.set('sendMessage', { code: 500 });
+  const h = setup(); await h.step(h.event.dm('/test')); h.mock.failures.set('sendMessage', { code: 500 });
   await h.step(h.button('Open test sign-up')); expect(h.panel()[1].text).toContain('unknown');
   h.mock.failures.clear(); h.restart(); await h.step(); expect(h.signupSends()).toHaveLength(1);
   await h.step(h.button('End test')); expect(h.panel()[1].text).toContain('Test ended');
 });
 it('keeps empty outcomes navigable and permits a fresh run after ending', async () => {
-  const h = setup(); await h.step(h.event.command('/test')); await h.step(h.button('Open test sign-up'));
+  const h = setup(); await h.step(h.event.dm('/test')); await h.step(h.button('Open test sign-up'));
   await h.step(h.button('Close & choose helper')); expect(h.panel()[1].text).toContain('No check-ins needed');
-  await h.step(h.button('End test')); await h.step(h.event.command('/test'));
+  await h.step(h.button('End test')); await h.step(h.event.dm('/test'));
   expect([...h.mock.messages.values()].filter(p => String(p.text).includes('<b>Test flow</b>'))).toHaveLength(2);
 });
 it('ends even when Telegram cannot edit the assignment, allowing a new test immediately', async () => {
   const h = setup(); const assignment = await h.assign(); const confirm = h.button("I've checked everyone in", 11, assignment);
   h.mock.failures.set('editMessageText', { code: 400 }); await h.step(h.button('End test'));
-  await h.step(h.event.command('/test'));
+  await h.step(h.event.dm('/test'));
   expect([...h.mock.messages.values()].filter(p => String(p.text).includes('<b>Test flow</b>'))).toHaveLength(2);
   confirm.update_id = h.event.command('/unused').update_id; await h.step(confirm);
   expect(h.calls('answerCallbackQuery').at(-1)?.payload.text).toContain('ended');
@@ -164,7 +164,7 @@ it('explains rate limiting and retries the reminder after the Telegram delay', a
   expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(2);
 });
 it('test sign-up never changes real fair-share credits', async () => {
-  const h = setup(); h.register(22); await h.step(h.event.command('/test')); await h.step(h.button('Open test sign-up'));
+  const h = setup(); h.register(22); await h.step(h.event.dm('/test')); await h.step(h.button('Open test sign-up'));
   await h.step(h.press('checkin', 22), h.press('duty', 11), h.press('duty', 12)); await h.step(h.button('Close & choose helper'));
   const session = h.store.list<TestSession>('test-session:')[0];
   const day = h.store.get<DayState>(`test:${session.id}:day:${session.day}`)!;
