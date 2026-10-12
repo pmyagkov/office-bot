@@ -8,13 +8,13 @@ const nudge = (command: string) =>
   `${command} only works in my private chat. Open <a href="https://t.me/office_test_bot">@office_test_bot</a>, press Start, then send ${command} there.`;
 
 // A command the bot does not own is probably meant for another bot in the group.
-it.each(['/poll', '/vote', '/settings'])('%s in the office group stays unanswered', async (command) => {
+it.each(['/poll', '/vote', '/settings', '/cancel'])('%s in the office group stays unanswered', async (command) => {
   const h = harness();
   await h.updates.handleUpdate(h.event.command(command, groupId, 11), now);
   expect(sent(h)).toEqual([]);
 });
 
-it.each(['/start', '/flipper', '/schedule', '/cancel', '/admin', '/today', '/stats', '/history', '/test', '/help'])(
+it.each(['/start', '/flipper', '/schedule', '/admin', '/today', '/stats', '/history', '/test', '/help'])(
   '%s in the office group points to the private chat and does nothing else', async (command) => {
     const h = harness();
     await h.scheduler.tick(at('09:00'));

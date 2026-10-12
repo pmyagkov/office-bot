@@ -3,9 +3,8 @@ import { escapeHtml } from './messages.js';
 // Every command the bot answers. All of them work in the private chat and none of them in the
 // group: the group is for the sign-up message, the assignment and their buttons. A command
 // outside this list is left alone, because it is probably addressed to another bot.
-// `cancel` is not advertised any more — every dialog carries its own Cancel button — but it is
-// still answered, so nobody who learnt it hits silence.
-export const COMMANDS = ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test', 'cancel', 'admin'] as const;
+// Giving a dialog up is a button on the dialog itself, not a command.
+export const COMMANDS = ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test', 'admin'] as const;
 
 // Shown for /start and /help, so nobody has to guess what exists.
 export function privateHelp(admin: boolean): string {

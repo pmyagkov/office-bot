@@ -102,8 +102,7 @@ it('/admin say @username reaches somebody known only from a sign-up press', asyn
   ]);
 });
 
-// Unlike /flipper or /cancel, say does not end the Flipper dialog, so it must not take its
-// keyboard away either.
+// Unlike /flipper, say does not end the Flipper dialog, so it must not take its keyboard away.
 it('/admin say in the middle of the Flipper dialog leaves the picker alone', async () => {
   const h = setup();
   await h.updates.handleUpdate(h.event.command('/admin flipper', 11, 11), now);

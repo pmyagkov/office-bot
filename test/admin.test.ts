@@ -204,7 +204,6 @@ it.each([
   ['Finish', (h: ReturnType<typeof harness>) => text(h, 'Finish'), EXPIRED],
   ['Choose person', (h: ReturnType<typeof harness>) => h.event.usersShared(11, 22), EXPIRED],
   ['plain text', (h: ReturnType<typeof harness>) => text(h, 'hello'), EXPIRED],
-  ['/cancel', (h: ReturnType<typeof harness>) => h.event.command('/cancel', 11, 11), 'Cancelled.'],
   ['the Cancel button', (h: ReturnType<typeof harness>) => h.event.callback('cancel', 11, 5, 11), EXPIRED],
   ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), MENU],
 ])('an expired admin dialog answers %s once and removes the keyboard', async (_name, build, reply) => {
@@ -298,13 +297,13 @@ it('/help during a live Flipper dialog leaves the picker and the dialog alone', 
   expect(h.flipperNames(22)).toBe('Anna K');
 });
 
-it('the self flow and cancel still work next to the admin dialog', async () => {
+it('the self flow still works after the admin dialog is given up', async () => {
   const h = setup();
   await startDialog(h);
-  await h.updates.handleUpdate(h.event.command('/cancel', 11, 11), now);
+  await h.updates.handleUpdate(h.event.callback('cancel', 11, 5, 11), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Cancelled.', markup: { remove_keyboard: true } });
   expect(h.store.get('conv:11')).toBeNull();
-  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
+  await h.updates.handleUpdate(h.event.dm('/flipper'), now);
   await h.updates.handleUpdate(text(h, 'Own Name'), now);
   expect(h.flipperNames(11)).toBe('Own Name');
 });

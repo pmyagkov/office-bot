@@ -87,12 +87,10 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   if (text === undefined) return undefined;
   const command = m.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@\w+)?(?:\s+(.*))?$/s.exec(text) : null;
   if (text.startsWith('/')) {
-    // A command that replaces or ends the Flipper dialog takes its picker away with it
-    // (`markup`). One that only reports something leaves a running dialog alone and clears
-    // nothing but the keyboard an expired dialog left on screen (`keep`) — otherwise the admin
-    // loses the picker while the dialog is still waiting, and their next message is saved as
-    // the Flipper name of whoever was picked.
-    const markup = isAdminConv(conv) || expiredAdmin ? REMOVE : undefined;
+    // A command that only reports something leaves a running dialog alone and clears nothing
+    // but the keyboard an expired dialog left on screen — otherwise the admin loses the picker
+    // while the dialog is still waiting, and their next message is saved as the Flipper name of
+    // whoever was picked.
     const keep = expiredAdmin ? REMOVE : undefined;
     // The prompt carries an inline Cancel button, which cannot also take away the picker an
     // admin dialog left on screen, so replacing one sends the notice as its own message first.
@@ -134,10 +132,6 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
         store.set(key, { kind: 'admin_person', saved: 0, at } satisfies Conv);
         return { pages: [PICK], markup: PICKER };
       }
-      case 'cancel':
-        if (!conv && !expiredAdmin) return undefined;
-        store.set(key, null);
-        return { pages: ['Cancelled.'], markup };
       default: return undefined;
     }
   }

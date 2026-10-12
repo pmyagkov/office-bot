@@ -50,14 +50,6 @@ it('/flipper changes an existing name', async () => {
   expect(h.flipperNames(11)).toBe('New Name');
 });
 
-it('/cancel clears the conversation', async () => {
-  const h = harness();
-  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
-  await h.updates.handleUpdate(h.event.command('/cancel', 11, 11), now);
-  expect(h.store.get('conv:11')).toBeNull();
-  await h.updates.handleUpdate(text(h, 'Late Name'), now);
-  expect(h.flipperNames(11)).toBeUndefined();
-});
 
 it('survives a restart between prompt and answer', async () => {
   const h = harness();
