@@ -8,9 +8,11 @@ it('/start in the private chat lists every command available there and in the gr
   const h = harness();
   await h.updates.handleUpdate(h.event.command('/start', 11, 11), now);
   const text = last(h);
-  for (const line of ['/flipper', '/schedule', '/cancel', '/help', '/today', '/stats month', '/history', '/test']) {
+  for (const line of ['/flipper', '/schedule', '/help', '/today', '/stats month', '/history', '/test']) {
     expect(text).toContain(line);
   }
+  // Not advertised: a dialog is given up with its own Cancel button.
+  expect(text).not.toContain('/cancel');
   expect(text).toContain("You're ready to receive a private reminder at 14:00");
   expect(h.store.get('user:11')).toMatchObject({ id: 11 });
 });

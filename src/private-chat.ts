@@ -25,7 +25,11 @@ const INVALID = "That doesn't look right. Send the name (1–64 characters, one 
 const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const PICK = 'Choose a person.';
 const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
-const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
+// Every dialog carries its own way out, so nobody has to remember a command for it. The button
+// sits on the newest message of the dialog, including a rejected name.
+const CANCEL_BUTTON = { text: '❌ Cancel', callback_data: 'cancel' };
+const CANCEL: InlineKeyboardMarkup = { inline_keyboard: [[CANCEL_BUTTON]] };
+const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, CANCEL_BUTTON]] };
 const REMOVE: ReplyKeyboardRemove = { remove_keyboard: true };
 const EXPIRED = 'That admin session expired. Send /admin flipper to start again.';
 const expired = (): Reply => ({ pages: [EXPIRED], markup: REMOVE });
@@ -90,7 +94,16 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     // the Flipper name of whoever was picked.
     const markup = isAdminConv(conv) || expiredAdmin ? REMOVE : undefined;
     const keep = expiredAdmin ? REMOVE : undefined;
-    const ask = (): Reply => { store.set(key, { kind: 'self_name', at } satisfies Conv); return { pages: [PROMPT], markup }; };
+    // The prompt carries an inline Cancel button, which cannot also take away the picker an
+    // admin dialog left on screen, so replacing one sends the notice as its own message first.
+    const ask = (): Reply => {
+      const replaced = isAdminConv(conv) || expiredAdmin;
+      store.set(key, { kind: 'self_name', at } satisfies Conv);
+      const prompt = { chatId: from.id, pages: [PROMPT], markup: CANCEL };
+      return replaced
+        ? { pages: [expiredAdmin ? EXPIRED : 'The Flipper dialog for other people is closed.'], markup: REMOVE, extra: [prompt] }
+        : { pages: prompt.pages, markup: CANCEL };
+    };
     switch (command?.[1]) {
       case 'start':
         // Pressing Start is also what makes private reminders deliverable, so it is recorded.
@@ -138,14 +151,14 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
     }
     // While a name is awaited every text is the name, including the word "Finish".
     const name = validateFlipperName(text);
-    if (!name) return { pages: [INVALID] };
+    if (!name) return { pages: [INVALID], markup: BACK };
     setFlipperName(store, conv.target.id, name, from.id, now);
     store.set(key, { kind: 'admin_person', saved: conv.saved + 1, at } satisfies Conv);
     return { pages: [`Saved: ${escapeHtml(name)} for ${escapeHtml(conv.target.name)}.`], markup: PICKER };
   }
   if (conv?.kind !== 'self_name') return undefined;
   const name = validateFlipperName(text);
-  if (!name) return { pages: [INVALID] };
+  if (!name) return { pages: [INVALID], markup: CANCEL };
   setFlipperName(store, from.id, name, from.id, now);
   store.set(key, null);
   return { pages: [`Saved: ${escapeHtml(name)}. Go back to the group and press Check me in.`] };
@@ -153,6 +166,17 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
 
 const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then plan again.';
 const PLAN_PRESSED: Record<Choice, string> ={ checkin: "You're signed up for the next check-in", duty: "You're on duty at the next sign-up" };
+
+// The Cancel button of whichever dialog is running. Rights are not checked: giving a dialog up
+// only clears state. An old button tapped after the dialog ended answers the tap and no more.
+function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): { text: string; reply?: Reply } {
+  const key = `conv:${cb.from.id}`;
+  const { conv, expiredAdmin } = readConv(store, key, now);
+  if (expiredAdmin) return { text: 'Not available.', reply: expired() };
+  if (!conv) return { text: 'Nothing to cancel.' };
+  store.set(key, null);
+  return { text: 'Cancelled', reply: { pages: ['Cancelled.'], markup: REMOVE } };
+}
 
 // The `/schedule` keyboard. A plan replaces the previous one; it is never added to.
 function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } {
@@ -172,6 +196,7 @@ function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Fact
 export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
   const chat = cb.message?.chat;
   if (cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
+  if (cb.data === 'cancel') return handleCancelPress(store, cb, now);
   if (cb.data?.startsWith('plan:')) return handlePlanPress(store, cb, now, facts);
   if (cb.data !== 'admin:back') return undefined;
   const key = `conv:${cb.from.id}`;

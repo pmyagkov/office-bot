@@ -11,7 +11,6 @@ const PRIVATE_MENU = [
   { command: 'stats', description: "This week's confirmed check-ins" },
   { command: 'history', description: 'Recent confirmations' },
   { command: 'test', description: 'Interactive test run with separate statistics' },
-  { command: 'cancel', description: 'Stop the current dialog' },
 ];
 // Empty on purpose: no command is answered in the group, so Telegram must not suggest one
 // there. This scope wins over the default one, whatever BotFather was told.

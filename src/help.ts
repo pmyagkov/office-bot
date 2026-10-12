@@ -1,8 +1,10 @@
 import { escapeHtml } from './messages.js';
 
-// Every command the bot owns. All of them work in the private chat and none of them in the
+// Every command the bot answers. All of them work in the private chat and none of them in the
 // group: the group is for the sign-up message, the assignment and their buttons. A command
 // outside this list is left alone, because it is probably addressed to another bot.
+// `cancel` is not advertised any more — every dialog carries its own Cancel button — but it is
+// still answered, so nobody who learnt it hits silence.
 export const COMMANDS = ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test', 'cancel', 'admin'] as const;
 
 // Shown for /start and /help, so nobody has to guess what exists.
@@ -16,7 +18,6 @@ export function privateHelp(admin: boolean): string {
       "/stats month — this month's confirmed check-ins",
       '/history — recent confirmations',
       '/test — interactive test run in the group, with separate statistics',
-      '/cancel — stop whatever dialog is running',
       '/help — show this list',
       ...(admin ? ['/admin — commands for group admins'] : [])].join('\n'),
     "You're ready to receive a private reminder at 14:00 (Europe/Belgrade) if you're assigned badge duty and haven't confirmed it yet. Confirmations are self-reported.",

@@ -21,7 +21,9 @@ Group admins register names for others: `/admin` in the private chat lists their
 
 ## Commands
 
-**Every command works in the bot's private chat and nowhere else:** `/start`, `/help`, `/flipper`, `/schedule`, `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, `/cancel`, and `/admin` for group admins.
+**Every command works in the bot's private chat and nowhere else:** `/start`, `/help`, `/flipper`, `/schedule`, `/today`, `/stats` (week), `/stats month`, `/history`, `/test`, and `/admin` for group admins.
+
+Every dialog carries its own **❌ Cancel** button — on the Flipper prompt, on a rejected name and next to **Back** in the admin loop — so giving one up needs no command. `/cancel` is still answered for anyone who learnt it, but it is no longer listed or offered in the menu.
 
 The group is for the sign-up message, the assignment and their buttons. A command typed there is answered once with a link to the private chat and does nothing else; a command the bot does not own stays unanswered, because it is probably addressed to another bot. Telegram's own command menu is published for private chats only and deliberately empty for groups, so nothing is suggested there in the first place. `/start` and `/help` list everything available — the `/admin` line only for admins.
 

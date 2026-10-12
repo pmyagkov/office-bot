@@ -12,7 +12,8 @@ it('publishes separate command menus for private chats and for groups', async ()
     commands: (c.payload.commands as { command: string }[]).map(entry => entry.command),
   }));
   expect(published).toEqual([
-    { scope: 'all_private_chats', commands: ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test', 'cancel'] },
+    // No `cancel`: every dialog carries its own Cancel button instead.
+    { scope: 'all_private_chats', commands: ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test'] },
     { scope: 'all_group_chats', commands: [] },
   ]);
 });
