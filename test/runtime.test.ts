@@ -18,7 +18,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { instances.splice(0).forEach(h => h.store.close()); for (const cleanup of cleanups.splice(0)) await cleanup(); });
 const config = loadConfig({ TELEGRAM_BOT_TOKEN: '123456:dummy_dummy_dummy', TELEGRAM_CHAT_ID: String(groupId) });
 it('runs an entire day through the production polling/input path', async () => {
-  const h = harness(); instances.push(h); let now = at('09:00');
+  const h = harness(); instances.push(h); let now = at('09:00'); h.mock.members.set(22, 'member');
   const runtime = createRuntime({ ...config, heartbeat: '' }, h.store, h.telegram, () => now, 'office_test_bot');
   await runtime.step(); const signup = h.day().signup!.messageId!; h.register(22); h.register(11);
   h.mock.updates.push(h.event.press('2026-09-30', 'duty', 22, signup), h.event.press('2026-09-30', 'checkin', 22, signup), h.event.press('2026-09-30', 'duty', 11, signup));
@@ -26,7 +26,8 @@ it('runs an entire day through the production polling/input path', async () => {
   now = at('10:00'); await runtime.step(); expect(h.day().assignment?.recipients.map(p => p.id)).toEqual([22]);
   const assignment = h.day().assignment!.messageId!; const click = h.event.click('2026-09-30', 11, assignment); h.mock.updates.push(click, click);
   now = at('13:59'); await runtime.step(); now = at('14:00'); await runtime.step();
-  h.mock.updates.push(h.event.command('/stats')); await runtime.step();
+  // Asked privately by 22, so chat 11 staying empty still means the helper got no reminder.
+  h.mock.updates.push(h.event.dm('/stats', 22)); await runtime.step();
   expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('1 duties');
   expect(h.calls('editMessageText').filter(c => c.payload.message_id === assignment)).toHaveLength(1);

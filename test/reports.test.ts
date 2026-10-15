@@ -4,10 +4,10 @@ import type { DayState } from '../src/types.js';
 import { renderHistory, renderStats, renderToday } from '../src/reports.js';
 const instances: ReturnType<typeof harness>[] = [];
 afterEach(() => instances.splice(0).forEach(h => h.store.close()));
-async function setup() { const h = harness(); instances.push(h); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); for (const id of [22, 33, 44]) h.vote('request', id); await h.close(); return h; }
+async function setup() { const h = harness(); instances.push(h); h.mock.members.set(11, 'member'); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); for (const id of [22, 33, 44]) h.vote('request', id); await h.close(); return h; }
 it('counts a duty separately from three completed check-ins through /stats', async () => {
-  const h = await setup(); await h.updates.handleUpdate(h.event.command('/stats'), at('11:00')); expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('No confirmed');
-  await h.updates.handleUpdate(h.event.click('2026-09-30', 11, 2), at('11:01')); await h.updates.handleUpdate(h.event.command('/stats@office_test_bot'), at('11:02'));
+  const h = await setup(); await h.updates.handleUpdate(h.event.dm('/stats'), at('11:00')); expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('No confirmed');
+  await h.updates.handleUpdate(h.event.click('2026-09-30', 11, 2), at('11:01')); await h.updates.handleUpdate(h.event.dm('/stats@office_test_bot'), at('11:02'));
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('1 duties · 3 check-ins performed · 0 received');
   expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('0 duties · 0 check-ins performed · 1 received');
 });
@@ -30,9 +30,9 @@ it('reports an open sign-up with counts and the closed result on /today', async 
   const page = renderToday(h.store, '2026-09-30', 'Europe/Belgrade')[0];
   expect(page).toContain('A helper has been selected.'); expect(page).toContain('• F22'); expect(page).toContain('Awaiting confirmation');
 });
-it('ignores commands in other groups/private chats and addressed to other bots', async () => {
+it('ignores commands in other groups and commands addressed to other bots', async () => {
   const h = await setup(); const before = h.calls('sendMessage').length;
-  for (const update of [h.event.command('/stats', -999), h.event.command('/stats', 11), h.event.command('/stats@other_bot')]) await h.updates.handleUpdate(update, at('11:00'));
+  for (const update of [h.event.command('/stats', -999), h.event.command('/stats@other_bot'), h.event.dm('/stats@other_bot')]) await h.updates.handleUpdate(update, at('11:00'));
   expect(h.calls('sendMessage')).toHaveLength(before);
-  await h.updates.handleUpdate(h.event.command('/start', 11), at('11:01')); expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('private reminder');
+  await h.updates.handleUpdate(h.event.dm('/start'), at('11:01')); expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('private reminder');
 });

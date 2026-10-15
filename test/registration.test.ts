@@ -50,14 +50,6 @@ it('/flipper changes an existing name', async () => {
   expect(h.flipperNames(11)).toBe('New Name');
 });
 
-it('/cancel clears the conversation', async () => {
-  const h = harness();
-  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
-  await h.updates.handleUpdate(h.event.command('/cancel', 11, 11), now);
-  expect(h.store.get('conv:11')).toBeNull();
-  await h.updates.handleUpdate(text(h, 'Late Name'), now);
-  expect(h.flipperNames(11)).toBeUndefined();
-});
 
 it('survives a restart between prompt and answer', async () => {
   const h = harness();
@@ -94,7 +86,6 @@ it('keeps a conversation younger than one hour, and /flipper after a stale one s
 it('ignores private text without a conversation and commands in other chats', async () => {
   const h = harness();
   await h.updates.handleUpdate(text(h, 'Anna K'), now);
-  await h.updates.handleUpdate(h.event.command('/flipper', groupId, 11), now);
   await h.updates.handleUpdate(h.event.command('/start flipper', -1009999999999, 11), now);
   await h.updates.handleUpdate(h.event.command('/flipper', 12, 11), now);
   await h.updates.handleUpdate(h.event.command('/flipper@other_bot', 11, 11), now);
@@ -104,6 +95,9 @@ it('ignores private text without a conversation and commands in other chats', as
   expect(h.flipperNames(11)).toBeUndefined();
   expect(h.store.get('conv:11')).toBeUndefined();
   expect(h.store.get('conv:13')).toBeUndefined();
+  // Only the office group gets the nudge; the same command in another group stays unanswered.
+  await h.updates.handleUpdate(h.event.command('/flipper', groupId, 11), now);
+  expect(sent(h)).toEqual([{ chat: groupId, text: expect.stringContaining('/flipper only works in my private chat.') }]);
 });
 
 it('plain /start still replies with the reminder copy', async () => {

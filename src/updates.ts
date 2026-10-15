@@ -7,22 +7,37 @@ import { refreshAssignments } from './messages.js';
 import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { refreshSignups } from './signup.js';
 import { createTestFlow } from './test-flow.js';
-import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type Reply } from './private-chat.js';
-type ReplyJob = { key: string; chatId: number; pages: string[]; markup?: Reply['markup']; done: boolean };
+import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type PrivateContext, type Reply } from './private-chat.js';
+import { flushReplies as flush, queueReply } from './replies.js';
+import { findByUsername, rememberUsername } from './directory.js';
+import { parseSay, sayArgs } from './say.js';
+import { COMMANDS, MEMBERS_ONLY, privateOnlyNudge } from './help.js';
 export function createUpdates(services: Omit<Services, 'chooseIndex'> & { username: string }) {
   const { store, telegram, delivery, schedule, chatId, username, flipperNames } = services;
   const tests = createTestFlow({ ...services, chooseIndex: randomInt });
-  async function flushReplies(now: Date) {
-    for (const reply of store.list<ReplyJob>('reply:')) {
-      if (reply.done) continue;
-      let pending = false;
-      for (let i = 0; i < reply.pages.length; i++) {
-        const markup = i === reply.pages.length - 1 ? reply.markup : undefined;
-        const result = await delivery.deliver(`${reply.key}:${i}`, now, () => telegram.sendMessage(reply.chatId, reply.pages[i], markup));
-        if (result.kind === 'rejected' && result.code === 429) { pending = true; break; }
-      }
-      if (!pending) { reply.done = true; store.set(`reply:${reply.key}`, reply); }
+  const ctx: PrivateContext = { groupChatId: chatId, botUsername: username };
+  const flushReplies = (now: Date) => flush(store, telegram, delivery, now);
+  // The commands that only read state and answer with text. `/test` is here too: it is driven
+  // from the private chat, and its panel and messages still go to the group.
+  // In the group Telegram guaranteed that whoever typed one of these was a member. A private
+  // chat guarantees nothing, so membership is checked before any of the group's data leaves,
+  // and before a stranger can put a test panel in front of everybody.
+  function reports(command: RegExpExecArray, update: Update, now: Date, facts: Facts): string[] {
+    const day = localTime(now, schedule.zone).day;
+    if (!MEMBERS_ONLY.includes(command[1])) return [];
+    if (!facts.member) return ['Only members of the office group can use this.'];
+    switch (command[1]) {
+      case 'test': return tests.start(update, now);
+      case 'today': return renderToday(store, day, schedule.zone);
+      case 'stats': return [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')];
+      case 'history': return [renderHistory(store, 10, schedule.zone)];
+      default: return [];
     }
+  }
+  // `pages` answer the chat the update came from; `extra` is addressed elsewhere and keyed apart.
+  function queue(key: string, chatId: number, reply: Reply) {
+    if (reply.pages.length) queueReply(store, key, { chatId, pages: reply.pages, markup: reply.markup });
+    reply.extra?.forEach((job, index) => queueReply(store, `${key}:to${index}`, job));
   }
   return {
     flushReplies,
@@ -33,23 +48,48 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       tests.restoreDeliveries();
       const cb = update.callback_query;
       const m = update.message;
-      const command = m?.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@([\w]+))?(?:\s+(.*))?$/.exec(m.text ?? '') : null;
+      // `s`: the arguments of `/admin say` may be a message of several lines.
+      const command = m?.entities?.some(e => e.type === 'bot_command' && e.offset === 0) ? /^\/(\w+)(?:@([\w]+))?(?:\s+(.*))?$/s.exec(m.text ?? '') : null;
       const addressed = !command || !command[2] || command[2].toLowerCase() === username.toLowerCase();
       const privateMessage = !!m && addressed && !!m.from && !m.from.is_bot && m.chat.type === 'private' && m.chat.id === m.from.id;
       // Network facts are gathered before the synchronous transaction; a temporary lookup failure throws and the cursor stays put.
       const isAdmin = async (userId: number) => ['administrator', 'creator'].includes(await telegram.getMemberStatus(chatId, userId) ?? '');
+      const isMember = async (userId: number) => {
+        const status = await telegram.getMemberStatus(chatId, userId);
+        return status !== null && status !== 'left' && status !== 'kicked';
+      };
       const facts: Facts = { admin: false };
+      if (privateMessage && m.from && MEMBERS_ONLY.includes(command?.[1] ?? '')) facts.member = await isMember(m.from.id);
       if (privateMessage && m.from) {
         const conv = liveConv(store.get<Conv | null>(`conv:${m.from.id}`), now);
-        if (command?.[1] === 'admin' || isAdminConv(conv) || m.users_shared) {
+        // /start and /help list the admin commands only for admins, so they need the lookup too.
+        if (['admin', 'start', 'help'].includes(command?.[1] ?? '') || isAdminConv(conv) || m.users_shared) {
           facts.admin = await isAdmin(m.from.id);
           const picked = m.users_shared?.users[0];
           if (facts.admin && isAdminConv(conv) && picked) {
             const status = await telegram.getMemberStatus(chatId, picked.user_id);
             facts.targetIsMember = status !== null && status !== 'left' && status !== 'kicked';
           }
+          if (facts.admin && command?.[1] === 'admin') {
+            const say = sayArgs(command[3]);
+            const parsed = say === undefined ? undefined : parseSay(say);
+            const target = parsed && !('error' in parsed) ? parsed.target : undefined;
+            const wanted = target?.replace(/^@/, '').toLowerCase();
+            const id = wanted ? findByUsername(store, wanted) : undefined;
+            if (id !== undefined) {
+              const member = await telegram.getMember(chatId, id);
+              // A handle Telegram no longer reports for this person belongs to somebody else
+              // now, or to nobody; either way the index is stale and nothing is sent privately.
+              if (member && member.username?.toLowerCase() === wanted) {
+                facts.sayTarget = { id, member: member.status !== 'left' && member.status !== 'kicked' };
+              }
+            }
+          }
         }
       } else if (cb?.data?.startsWith('admin:')) facts.admin = await isAdmin(cb.from.id);
+      // The group's own buttons are only reachable by members; this keyboard is in a private
+      // chat, so membership has to be checked here instead.
+      else if (cb?.data?.startsWith('plan:')) facts.member = await isMember(cb.from.id);
       let answer: PressResult | undefined;
       store.atomic(() => {
         answer = tests.apply(update, now);
@@ -59,32 +99,22 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
             const result = handlePrivateCallback(store, cb, now, facts);
             if (result) {
               answer = { text: result.text };
-              if (result.reply?.pages.length) { const key = `callback:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: cb.from.id, pages: result.reply.pages, markup: result.reply.markup, done: false } satisfies ReplyJob); }
+              if (result.reply) queue(`callback:${update.update_id}`, cb.from.id, result.reply);
             }
           }
           if (!answer) { const text = confirmAssignment(store, cb, now); if (text) answer = { text }; }
         }
         if (cb && !answer) answer = { text: 'Not available.' };
         if (m && privateMessage) {
-          let reply: Reply | undefined;
-          if (command?.[1] === 'start' && command[3]?.trim() !== 'flipper') {
-            store.set(`user:${m.from.id}`, { id: m.from.id, startedAt: now.toISOString() });
-            reply = { pages: ["You're ready to receive a private reminder at 14:00 (Europe/Belgrade) if you're assigned badge duty and haven't confirmed it yet. Sign up and confirm in the group."] };
-          } else reply = handlePrivateMessage(store, m, now, facts);
-          if (reply?.pages.length) { const key = `command:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: m.chat.id, pages: reply.pages, markup: reply.markup, done: false } satisfies ReplyJob); }
-        } else if (m && command && addressed) {
-          let pages: string[] = [];
-          if (m.chat.id === chatId) {
-            const day = localTime(now, schedule.zone).day;
-            switch (command[1]) {
-              case 'test': pages = tests.start(update, now); break;
-              case 'today': pages = renderToday(store, day, schedule.zone); break;
-              case 'stats': pages = [renderStats(store, day, command[3]?.trim() === 'month' ? 'month' : 'week')]; break;
-              case 'history': pages = [renderHistory(store, 10, schedule.zone)]; break;
-              case 'help': case 'start': pages = ["Office coordination: sign-up at 09:00, helper selection at 10:00, Monday–Friday (Europe/Belgrade). The selected helper confirms with “I've checked everyone in”. At 14:00, an unconfirmed helper receives one private reminder. Open my private chat and press /start to enable reminders.\n\n/today — today's status\n/stats — this week's confirmed check-ins\n/stats month — this month's confirmed check-ins\n/history — recent confirmations\n/test — interactive test with separate statistics\n/flipper — set your Flipper name (in a private chat)\n\nConfirmations are self-reported."]; break;
-            }
-          }
-          if (pages.length) { const key = `command:${update.update_id}`; store.set(`reply:${key}`, { key, chatId: m.chat.id, pages, done: false } satisfies ReplyJob); }
+          rememberUsername(store, m.from!.id, m.from!.username, now);
+          // Dialogs and personal settings first; the reports are commands without a dialog.
+          const reply = handlePrivateMessage(store, m, now, facts, ctx) ?? (command ? { pages: reports(command, update, now, facts) } : undefined);
+          if (reply) queue(`command:${update.update_id}`, m.chat.id, reply);
+        } else if (m && command && addressed && m.chat.id === chatId && (COMMANDS as readonly string[]).includes(command[1])) {
+          // Nothing the bot owns is answered in the group: a command there is replaced by one
+          // pointer to the private chat. An unknown command stays unanswered, because it is
+          // probably addressed to another bot.
+          queueReply(store, `command:${update.update_id}`, { chatId: m.chat.id, pages: [privateOnlyNudge(`/${command[1]}${command[3] ? ` ${command[3]}` : ''}`, username)] });
         }
         store.set('offset', update.update_id + 1);
       });

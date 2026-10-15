@@ -1,11 +1,15 @@
 import type { Update, User } from 'grammy/types';
 export const groupId = -1001234567890;
-export const user = (id: number, name = `Person ${id}`): User => ({ id, first_name: name, is_bot: false });
+export const user = (id: number, name = `Person ${id}`, username?: string): User => ({ id, first_name: name, is_bot: false, ...(username ? { username } : {}) });
 export function events() {
   let next = 1;
   return {
-    command(text: string, chatId = groupId, actor = 11): Update {
-      return { update_id: next++, message: { message_id: next, date: 1790751600, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, from: user(actor), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } };
+    command(text: string, chatId = groupId, actor = 11, username?: string): Update {
+      return { update_id: next++, message: { message_id: next, date: 1790751600, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, from: user(actor, undefined, username), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } };
+    },
+    // Every command lives in the bot's private chat, where the chat id is the person's own.
+    dm(text: string, actor = 11, username?: string): Update {
+      return this.command(text, actor, actor, username);
     },
     click(day: string, actor: number, messageId: number, chatId = groupId): Update {
       return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor), chat_instance: 'test', data: `done:${day}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Assignment' } } };
@@ -13,8 +17,8 @@ export function events() {
     callback(data: string, actor: number, messageId: number, chatId: number): Update {
       return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor), chat_instance: 'test', data, message: { message_id: messageId, date: 1790755200, chat: chatId < 0 ? { id: chatId, type: 'supergroup', title: 'Office' } : { id: chatId, type: 'private', first_name: 'Person' }, text: 'Sign-up' } } };
     },
-    press(day: string, action: 'checkin' | 'duty' | 'discard', actor: number, messageId: number, name?: string, chatId = groupId): Update {
-      return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor, name), chat_instance: 'test', data: `signup:${day}:${action}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Sign-up' } } };
+    press(day: string, action: 'checkin' | 'duty' | 'discard', actor: number, messageId: number, name?: string, chatId = groupId, username?: string): Update {
+      return { update_id: next++, callback_query: { id: `callback-${next}`, from: user(actor, name, username), chat_instance: 'test', data: `signup:${day}:${action}`, message: { message_id: messageId, date: 1790755200, chat: { id: chatId, type: 'supergroup', title: 'Office' }, text: 'Sign-up' } } };
     },
     usersShared(actor: number, targetId: number, requestId = 1, name?: string): Update {
       return { update_id: next++, message: { message_id: next, date: 1790751600, chat: { id: actor, type: 'private', first_name: 'Person' }, from: user(actor), users_shared: { request_id: requestId, users: [{ user_id: targetId, first_name: name ?? `Person ${targetId}` }] } } };

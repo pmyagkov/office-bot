@@ -9,12 +9,12 @@ export function recoverOperation(store: Store, key: string, mode: 'retry' | 'res
       store.set(`op:${key}`, { key, status: 'sent', value: messageId!, updatedAt: new Date().toISOString() } satisfies Operation);
     } else {
       store.set(`op:${key}`, { key, status: 'prepared', updatedAt: new Date().toISOString() } satisfies Operation);
-      // Reply jobs (commands and admin:back callbacks) must be reopened, or their flush would never resend.
-      const replyKey = /^(command|callback):\d+:\d+$/.test(key) ? key.slice(0, key.lastIndexOf(':')) : undefined;
-      if (replyKey) {
-        const reply = store.get<Record<string, unknown>>(`reply:${replyKey}`);
-        if (reply) store.set(`reply:${replyKey}`, { ...reply, done: false });
-      }
+      // A reply job must be reopened too, or its flush would never resend. Every page of one is
+      // delivered under `<reply key>:<page>`, whatever shape the reply key itself has; the
+      // lookup below is what decides, so an operation that is not a reply page stays untouched.
+      const page = /^(.*):\d+$/.exec(key);
+      const reply = page && store.get<Record<string, unknown>>(`reply:${page[1]}`);
+      if (page && reply) store.set(`reply:${page[1]}`, { ...reply, done: false });
     }
   });
 }

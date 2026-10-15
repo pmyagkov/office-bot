@@ -2,6 +2,20 @@ import { Api, GrammyError, type Transformer } from 'grammy';
 import type { ChatMember, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update } from 'grammy/types';
 import type { SendResult } from './types.js';
 
+const PRIVATE_MENU = [
+  { command: 'start', description: 'What I do and which commands exist' },
+  { command: 'help', description: 'Show the command list' },
+  { command: 'flipper', description: 'Set the name you are listed under in Flipper' },
+  { command: 'schedule', description: 'Sign up for the next sign-up in advance' },
+  { command: 'today', description: "Today's status" },
+  { command: 'stats', description: "This week's confirmed check-ins" },
+  { command: 'history', description: 'Recent confirmations' },
+  { command: 'test', description: 'Interactive test run with separate statistics' },
+];
+// Empty on purpose: no command is answered in the group, so Telegram must not suggest one
+// there. This scope wins over the default one, whatever BotFather was told.
+const GROUP_MENU: { command: string; description: string }[] = [];
+
 export async function send<T>(action: () => Promise<T>): Promise<SendResult<T>> {
   try { return { kind: 'sent', value: await action() }; }
   catch (error) {
@@ -26,8 +40,21 @@ export function createTelegram(token: string, options: { apiRoot?: string; trans
         parse_mode: 'HTML', reply_markup: markup, link_preview_options: { is_disabled: true },
       })).message_id);
     },
-    async getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
-      try { return (await api.getChatMember(chatId, userId)).status; }
+    // Scoped menus: what Telegram suggests in the group is exactly what works there.
+    async publishCommands(): Promise<void> {
+      await api.setMyCommands(PRIVATE_MENU, { scope: { type: 'all_private_chats' } });
+      await api.setMyCommands(GROUP_MENU, { scope: { type: 'all_group_chats' } });
+    },
+    getMemberStatus(chatId: number, userId: number): Promise<ChatMember['status'] | null> {
+      return this.getMember(chatId, userId).then(member => member?.status ?? null);
+    },
+    // The handle Telegram reports here is the one the person has now, which the username index
+    // cannot know. `/admin say @name` uses it to make sure it is writing to the right person.
+    async getMember(chatId: number, userId: number): Promise<{ status: ChatMember['status']; username?: string } | null> {
+      try {
+        const member = await api.getChatMember(chatId, userId);
+        return { status: member.status, ...(member.user.username ? { username: member.user.username } : {}) };
+      }
       catch (error) {
         if (error instanceof GrammyError && error.error_code === 400) {
           const description = error.description.toLowerCase();

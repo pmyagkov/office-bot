@@ -3,6 +3,7 @@ import { isLegacy, type Choice, type DayKey, type DayState, type Operation } fro
 import { assignmentMessage, confirmKeyboard } from './messages.js';
 import { refreshSignups, renderSignup } from './signup.js';
 import { chooseHelper } from './ranking.js';
+import { applyPlans } from './plans.js';
 
 // Both scheduled days and interactive test runs use these exact transitions.
 export function createFlow({ store, telegram, delivery, schedule, chatId, chooseIndex, flipperNames }: Services) {
@@ -30,6 +31,9 @@ export function createFlow({ store, telegram, delivery, schedule, chatId, choose
     let day = store.get<DayState>(`day:${key}`);
     if (!day) {
       day = { day: key, chatId, phase: 'open', signup: { messageId: null, closesAt: closesAt.toISOString(), choices: {} } };
+      // Plans live in the store this flow was given. A test run gets a scoped store that holds
+      // none of them, so an interactive test never consumes anybody's real plan.
+      applyPlans(store, day, now, flipperNames);
       save(day);
     }
     const signup = day.signup;

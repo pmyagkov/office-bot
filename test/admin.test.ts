@@ -10,7 +10,8 @@ import { groupId, user } from './fixtures/telegram-updates.js';
 
 const now = at('09:30');
 const PICKER = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
-const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }]] };
+const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, { text: '❌ Cancel', callback_data: 'cancel' }]] };
+const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const sent = (h: ReturnType<typeof harness>) => h.calls('sendMessage').map(c => ({ chat: c.payload.chat_id, text: c.payload.text, markup: c.payload.reply_markup }));
 const last = (h: ReturnType<typeof harness>) => sent(h).at(-1);
 function setup() {
@@ -30,7 +31,7 @@ it('/admin lists the command for an admin and refuses a member', async () => {
   await h.updates.handleUpdate(h.event.command('/admin', 11, 11), now);
   await h.updates.handleUpdate(h.event.command('/admin', 22, 22), now);
   expect(sent(h)).toEqual([
-    { chat: 11, text: 'Admin commands:\n/admin flipper — set Flipper names', markup: undefined },
+    { chat: 11, text: MENU, markup: undefined },
     { chat: 22, text: 'Not available.', markup: undefined },
   ]);
   expect(h.store.get('conv:22')).toBeUndefined();
@@ -203,9 +204,8 @@ it.each([
   ['Finish', (h: ReturnType<typeof harness>) => text(h, 'Finish'), EXPIRED],
   ['Choose person', (h: ReturnType<typeof harness>) => h.event.usersShared(11, 22), EXPIRED],
   ['plain text', (h: ReturnType<typeof harness>) => text(h, 'hello'), EXPIRED],
-  ['/cancel', (h: ReturnType<typeof harness>) => h.event.command('/cancel', 11, 11), 'Cancelled.'],
-  ['/flipper', (h: ReturnType<typeof harness>) => h.event.command('/flipper', 11, 11), 'How are you listed in Flipper? Send the name exactly as it appears there.'],
-  ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), 'Admin commands:\n/admin flipper — set Flipper names'],
+  ['the Cancel button', (h: ReturnType<typeof harness>) => h.event.callback('cancel', 11, 5, 11), EXPIRED],
+  ['/admin', (h: ReturnType<typeof harness>) => h.event.command('/admin', 11, 11), MENU],
 ])('an expired admin dialog answers %s once and removes the keyboard', async (_name, build, reply) => {
   const h = setup(); const later = new Date(now.getTime() + 3_600_000);
   await startDialog(h);
@@ -217,6 +217,20 @@ it.each([
     await h.updates.handleUpdate(text(h, 'hello again'), later);
     expect(sent(h)).toHaveLength(count);
   }
+});
+
+// /flipper replaces the expired dialog with its own, and its prompt carries an inline Cancel
+// button, which cannot take the dead picker away as well — so the notice goes first.
+it('/flipper after an expired admin dialog removes the keyboard, then asks for the name', async () => {
+  const h = setup(); const later = new Date(now.getTime() + 3_600_000);
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.dm('/flipper'), later);
+  expect(sent(h).slice(-2)).toEqual([
+    { chat: 11, text: EXPIRED, markup: REMOVE },
+    { chat: 11, text: 'How are you listed in Flipper? Send the name exactly as it appears there.', markup: { inline_keyboard: [[{ text: '❌ Cancel', callback_data: 'cancel' }]] } },
+  ]);
+  await h.updates.handleUpdate(text(h, 'Own Name'), later);
+  expect(h.flipperNames(11)).toBe('Own Name');
 });
 
 it('a non-admin cannot reach admin states even with a forged users_shared', async () => {
@@ -269,21 +283,36 @@ it('a temporary membership lookup failure still lets the same runtime step close
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-it('the self flow and cancel still work next to the admin dialog', async () => {
+// Reading the command list does not end the Flipper dialog, so it must not take the picker
+// away either: a keyboard-less admin whose next message is still read as a name saves it by
+// accident.
+it('/help during a live Flipper dialog leaves the picker and the dialog alone', async () => {
   const h = setup();
   await startDialog(h);
-  await h.updates.handleUpdate(h.event.command('/cancel', 11, 11), now);
+  await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
+  await h.updates.handleUpdate(h.event.command('/help', 11, 11), now);
+  expect(last(h)?.markup).toBeUndefined();
+  expect(h.store.get('conv:11')).toMatchObject({ kind: 'admin_name' });
+  await h.updates.handleUpdate(text(h, 'Anna K'), now);
+  expect(h.flipperNames(22)).toBe('Anna K');
+});
+
+it('the self flow still works after the admin dialog is given up', async () => {
+  const h = setup();
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.callback('cancel', 11, 5, 11), now);
   expect(last(h)).toEqual({ chat: 11, text: 'Cancelled.', markup: { remove_keyboard: true } });
   expect(h.store.get('conv:11')).toBeNull();
-  await h.updates.handleUpdate(h.event.command('/flipper', 11, 11), now);
+  await h.updates.handleUpdate(h.event.dm('/flipper'), now);
   await h.updates.handleUpdate(text(h, 'Own Name'), now);
   expect(h.flipperNames(11)).toBe('Own Name');
 });
 
-it('ignores admin input from bots and from group chats', async () => {
+it('ignores admin input from bots, and answers /admin in the group with the private-chat nudge', async () => {
   const h = setup();
   const bot = h.event.command('/admin', 13, 13);
   await h.updates.handleUpdate({ ...bot, message: { ...bot.message!, from: { ...user(13), is_bot: true } } }, now);
-  await h.updates.handleUpdate(h.event.command('/admin', groupId, 11), now);
   expect(sent(h)).toEqual([]);
+  await h.updates.handleUpdate(h.event.command('/admin', groupId, 11), now);
+  expect(sent(h)).toEqual([{ chat: groupId, text: expect.stringContaining('/admin only works in my private chat.'), markup: undefined }]);
 });
