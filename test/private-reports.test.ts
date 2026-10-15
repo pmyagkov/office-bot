@@ -47,12 +47,24 @@ it('/history answers in the private chat', async () => {
   expect(last(h)).toEqual({ chat: 11, text: expect.stringContaining('Recent confirmations') });
 });
 
-// The test flow is driven from the private chat, but it is a rehearsal of the group's day, so
-// its panel and its messages still belong in the group.
-it('/test is started from the private chat and puts its panel in the group', async () => {
+// The control panel is for the one person steering the run, so it belongs in their private
+// chat. What the run rehearses — the sign-up, the assignment — still goes to the group, where
+// the participants press its buttons.
+it('/test keeps its control panel in the private chat', async () => {
   const h = harness(); h.mock.members.set(11, 'member');
-  await h.updates.handleUpdate(h.event.command('/test', 11, 11), now);
+  await h.updates.handleUpdate(h.event.dm('/test'), now);
   await h.updates.flushTestFlow(now);
-  expect(last(h).chat).toBe(groupId);
-  expect(last(h).text).toContain('<b>Test flow</b>');
+  expect(last(h)).toEqual({ chat: 11, text: expect.stringContaining('<b>Test flow</b>') });
+  expect(sent(h).filter(s => s.chat === groupId)).toEqual([]);
+});
+
+it('the test sign-up still goes to the group', async () => {
+  const h = harness(); h.mock.members.set(11, 'member');
+  await h.updates.handleUpdate(h.event.dm('/test'), now);
+  await h.updates.flushTestFlow(now);
+  const panel = h.calls('sendMessage').at(-1)!;
+  const open = (panel.payload.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat().find(b => b.text === 'Open test sign-up')!;
+  await h.updates.handleUpdate(h.event.callback(open.callback_data, 11, 1, 11), now);
+  await h.updates.flushTestFlow(now);
+  expect(sent(h).filter(s => s.text.startsWith('[TEST] 🏢 Office'))).toEqual([{ chat: groupId, text: expect.any(String) }]);
 });

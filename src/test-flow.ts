@@ -9,6 +9,7 @@ import { assignmentMessage, mention, refreshAssignments } from './messages.js';
 import { refreshSignups, signupText } from './signup.js';
 import { localTime } from './clock.js';
 import { renderStats } from './reports.js';
+import { previewPlans } from './plans.js';
 
 export type TestSession = {
   id: string; day: string; owner: Participant; expiresAt: string;
@@ -32,7 +33,10 @@ export function createTestFlow(services: Services) {
       sendMessage: (to: number, value: string, buttons?: InlineKeyboardMarkup) => telegram.sendMessage(to, text(value), keyboard(buttons)),
       editMessage: (to: number, id: number, value: string, buttons?: InlineKeyboardMarkup) => telegram.editMessage(to, id, text(value), keyboard(buttons)),
     };
-    return { store: scoped, delivery, telegram: port, flow: createFlow({ ...services, store: scoped, delivery, telegram: port }) };
+    // The day lives in the scoped store, the plans stay in the real one: a rehearsal shows them
+    // without spending them, so the sign-up they were made for still gets them.
+    const seedChoices = (day: DayState, when: Date) => previewPlans(store, day, when, services.flipperNames);
+    return { store: scoped, delivery, telegram: port, flow: createFlow({ ...services, store: scoped, delivery, telegram: port, seedChoices }) };
   }
   function context(s: TestSession) {
     let c = contexts.get(s.id); if (!c) { c = makeContext(s); contexts.set(s.id, c); } return c;
@@ -44,7 +48,8 @@ export function createTestFlow(services: Services) {
   }
   function start(update: Update, now: Date): string[] {
     const existing = active(now);
-    if (existing) return [`[TEST] A test is already running, controlled by ${mention(existing.owner)}.${existing.panelId && String(chatId).startsWith('-100') ? `\n<a href="https://t.me/c/${String(chatId).slice(4)}/${existing.panelId}">Open test controls</a>` : '\nUse the existing test controls.'}`];
+    // The controls live in the starter's own private chat, so nobody else can be sent to them.
+    if (existing) return [`[TEST] A test is already running, controlled by ${mention(existing.owner)}. Ask them to end it, or wait an hour for it to expire.`];
     const user = update.message?.from;
     if (!user || user.is_bot) return [];
     save({ id: update.update_id.toString(36), day: localTime(now, schedule.zone).day,
@@ -70,7 +75,7 @@ export function createTestFlow(services: Services) {
     if (match![1] === 'testdone') return text(confirmAssignment(context(s).store, { ...cb, data: `done:${match![3]}` }, now));
     // Days and fair-share history stay in the scoped store; Flipper names come from the real registry.
     if (match![1] === 'testsignup') return applySignupPress(context(s).store, { ...cb, data: `signup:${match![3]}` }, now, services.username ?? '', services.flipperNames);
-    if (cb.from.id !== s.owner.id || cb.message?.chat.id !== chatId || cb.message.message_id !== s.panelId) return text('Only the test starter can use these controls on the original panel.');
+    if (cb.from.id !== s.owner.id || cb.message?.chat.id !== s.owner.id || cb.message.message_id !== s.panelId) return text('Only the test starter can use these controls on the original panel.');
     const action = match![3]; const day = state(s);
     if (action === 'end') s.stage = 'ending';
     else if (action === 'open' && s.stage === 'ready') s.stage = 'opening';
@@ -115,11 +120,11 @@ export function createTestFlow(services: Services) {
     if (s.panelAbandoned) return;
     const c = context(s); const p = panel(s); const signature = JSON.stringify(p);
     if (!s.panelId) {
-      const result = await c.delivery.deliver('panel', now, () => c.telegram.sendMessage(chatId, p.text, p.keyboard));
+      const result = await c.delivery.deliver('panel', now, () => c.telegram.sendMessage(s.owner.id, p.text, p.keyboard));
       if (result.kind !== 'sent') return;
       s.panelId = result.value; s.panelRender = signature; save(s);
     } else if (s.panelRender !== signature) {
-      try { await c.telegram.editMessage(chatId, s.panelId, p.text, p.keyboard); s.panelRender = signature; save(s); }
+      try { await c.telegram.editMessage(s.owner.id, s.panelId, p.text, p.keyboard); s.panelRender = signature; save(s); }
       catch {
         // A deleted panel must not cause edit attempts forever.
         if (s.stage === 'ended' && expired(s, now)) { s.panelAbandoned = true; save(s); }
@@ -150,7 +155,8 @@ export function createTestFlow(services: Services) {
         await c.flow.publish(day, now);
         if (s.reminderRequested) await c.flow.remind(day, now, () => !expired(s, services.clock?.() ?? now));
         await refreshAssignments(c.store, c.telegram, schedule.zone);
-        if (s.statsRequested) await c.delivery.deliver('stats', now, () => c.telegram.sendMessage(chatId, renderStats(c.store, s.day, 'week')));
+        // Statistics are a report, and reports are private, so the test's go to the starter.
+        if (s.statsRequested) await c.delivery.deliver('stats', now, () => c.telegram.sendMessage(s.owner.id, renderStats(c.store, s.day, 'week')));
       }
       if (s.stage === 'ending' || (s.stage === 'ended' && s.cleanupPending && !expired(s, now))) {
         const signup = day?.signup, a = day?.assignment;

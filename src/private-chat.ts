@@ -1,7 +1,7 @@
 import type { CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove } from 'grammy/types';
 import { getFlipperName, setFlipperName, validateFlipperName } from './flipper.js';
 import { privateHelp } from './help.js';
-import { getPlan, PLAN_KEYBOARD, planText, setPlan, type Plan } from './plans.js';
+import { closedText, getPlan, PLAN_KEYBOARD, planText, setPlan, type Plan } from './plans.js';
 import { escapeHtml } from './messages.js';
 import type { Outgoing } from './replies.js';
 import { nudgeInGroup, parseSay, sayArgs, sayToGroup, sayToPerson, UNKNOWN_TARGET } from './say.js';
@@ -17,6 +17,10 @@ export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyb
 export type Facts = { admin: boolean; member?: boolean; targetIsMember?: boolean; sayTarget?: { id: number; member: boolean } };
 // What the handler needs to address chats other than the one it is answering in.
 export type PrivateContext = { groupChatId: number; botUsername: string };
+// The answer to a button: the toast on the button itself, anything to send, and anything to
+// rewrite in place. The edit is cosmetic — the state it describes is already committed — so the
+// caller performs it after the transaction and does not let a failed edit undo anything.
+export type PrivateAnswer = { text: string; reply?: Reply; edit?: { messageId: number; text: string } };
 type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
 
 const PROMPT = 'How are you listed in Flipper? Send the name exactly as it appears there.';
@@ -158,12 +162,12 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   return { pages: [`Saved: ${escapeHtml(name)}. Go back to the group and press Check me in.`] };
 }
 
-const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then plan again.';
+const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then /schedule to plan again.';
 const PLAN_PRESSED: Record<Choice, string> ={ checkin: "You're signed up for the next check-in", duty: "You're on duty at the next sign-up" };
 
 // The Cancel button of whichever dialog is running. Rights are not checked: giving a dialog up
 // only clears state. An old button tapped after the dialog ended answers the tap and no more.
-function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): { text: string; reply?: Reply } {
+function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): PrivateAnswer {
   const key = `conv:${cb.from.id}`;
   const { conv, expiredAdmin } = readConv(store, key, now);
   if (expiredAdmin) return { text: 'Not available.', reply: expired() };
@@ -172,22 +176,27 @@ function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): { text: 
   return { text: 'Cancelled', reply: { pages: ['Cancelled.'], markup: REMOVE } };
 }
 
-// The `/schedule` keyboard. A plan replaces the previous one; it is never added to.
-function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } {
+// The `/schedule` keyboard. A plan replaces the previous one; it is never added to. Every press
+// settles the question, so the panel is closed where it stands — rewritten without its buttons,
+// instead of a second live menu underneath the first. `/schedule` opens a fresh one.
+function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): PrivateAnswer {
   const action = cb.data!.slice('plan:'.length);
-  const show = (plan: Plan | undefined) => ({ pages: [planText(plan)], markup: PLAN_KEYBOARD });
+  const id = cb.from.id;
+  const close = (text: string) => ({ messageId: cb.message!.message_id, text });
+  const settled = (plan: Plan | undefined) => close(closedText(plan));
   if (!facts.member) return { text: 'Not available.' };
-  if (action === 'clear') { store.set(`plan:${cb.from.id}`, null); return { text: 'Your plan was removed', reply: show(undefined) }; }
+  if (action === 'close') return { text: 'Closed', edit: settled(getPlan(store, id, now)) };
+  if (action === 'clear') { store.set(`plan:${id}`, null); return { text: 'Your plan was removed', edit: settled(undefined) }; }
   if (action !== 'checkin' && action !== 'duty') return { text: 'Not available.' };
-  if (action === 'checkin' && !getFlipperName(store, cb.from.id)) {
-    return { text: 'Set your Flipper name first', reply: { pages: [NEEDS_FLIPPER], markup: PLAN_KEYBOARD } };
+  if (action === 'checkin' && !getFlipperName(store, id)) {
+    return { text: 'Set your Flipper name first', edit: close(NEEDS_FLIPPER) };
   }
-  const user: Participant ={ id: cb.from.id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), ...(cb.from.username ? { username: cb.from.username } : {}) };
-  return { text: PLAN_PRESSED[action], reply: show(setPlan(store, user, action, now)) };
+  const user: Participant = { id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), ...(cb.from.username ? { username: cb.from.username } : {}) };
+  return { text: PLAN_PRESSED[action], edit: settled(setPlan(store, user, action, now)) };
 }
 
 // `admin:back` from the name step returns to the picker without saving. Synchronous like handlePrivateMessage.
-export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
+export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): PrivateAnswer | undefined {
   const chat = cb.message?.chat;
   if (cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
   if (cb.data === 'cancel') return handleCancelPress(store, cb, now);

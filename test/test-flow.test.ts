@@ -20,8 +20,12 @@ function setup(time = '18:00') {
   const signup = () => find('[TEST] 🏢 Office');
   const signupSends = () => h.calls('sendMessage').filter(c => String(c.payload.text).startsWith('[TEST] 🏢 Office'));
   const assignmentSends = () => h.calls('sendMessage').filter(c => String(c.payload.text).includes('badge duty today'));
+  // The private reminder, told apart from the control panel that now shares its chat.
+  const reminderSends = () => h.calls('sendMessage').filter(c => String(c.payload.text).includes("haven't been confirmed yet"));
   const keyboard = (message: [number, Record<string, unknown>]) => (message[1].reply_markup as InlineKeyboardMarkup | undefined)?.inline_keyboard ?? [];
-  function button(label: string, actor = 11, message = panel(), chat = groupId) {
+  // A button is pressed where its message actually is: the control panel in the starter's
+  // private chat, the sign-up and the assignment in the group.
+  function button(label: string, actor = 11, message = panel(), chat = Number(message[1].chat_id)) {
     const data = keyboard(message).flat().find(b => b.text === label);
     expect(data, `Missing button ${label}: ${message[1].text}`).toBeDefined();
     return h.event.callback('callback_data' in data! ? data.callback_data : '', actor, message[0], chat);
@@ -37,7 +41,7 @@ function setup(time = '18:00') {
     await step(press('checkin', 22), press('duty', 11)); await step(button('Close & choose helper'));
     return find('badge duty today')!;
   }
-  return { ...h, step, find, panel, signup, signupSends, assignmentSends, keyboard, button, press, assign, time: (value: string) => { now = at(value); }, restart: () => { runtime = createRuntime(config, h.store, h.telegram, () => now, 'office_test_bot'); } };
+  return { ...h, step, find, panel, signup, signupSends, assignmentSends, reminderSends, keyboard, button, press, assign, time: (value: string) => { now = at(value); }, restart: () => { runtime = createRuntime(config, h.store, h.telegram, () => now, 'office_test_bot'); } };
 }
 it('runs the manual flow through production polling, with real confirmation and separate statistics', async () => {
   const h = setup(); await h.step(h.event.dm('/test@office_test_bot'));
@@ -54,9 +58,9 @@ it('runs the manual flow through production polling, with real confirmation and 
   const assignment = h.find('badge duty today')!;
   expect(assignment[1].text).toContain('[TEST]'); expect(assignment[1].text).toContain('• F22'); expect(assignment[1].text).toContain('tg://user?id=11');
   expect(h.keyboard(h.signup()!)).toEqual([]); expect(h.signup()![1].text).toContain('Sign-up closed');
-  expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
+  expect(h.reminderSends()).toHaveLength(0);
   const reminder = h.button('Send test reminder'); await h.step(reminder, reminder);
-  expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(1);
+  expect(h.reminderSends()).toHaveLength(1);
   await h.step(h.button("I've checked everyone in", 22, assignment));
   expect(h.panel()[1].text).not.toContain('Check-ins confirmed');
   await h.step(h.button("I've checked everyone in", 11, assignment));
@@ -102,7 +106,7 @@ it('shows blocked reminders, never retries them blindly, and expires abandoned r
   const h = setup(); const assignment = await h.assign();
   h.mock.failures.set('sendMessage', { code: 403 }); await h.step(h.button('Send test reminder'));
   expect(h.panel()[1].text).toContain('/start'); expect(h.panel()[1].text).toContain('403');
-  await h.step(); expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(1);
+  await h.step(); expect(h.reminderSends()).toHaveLength(1);
   h.time('19:01'); await h.step(); expect(h.panel()[1].text).toContain('Test ended');
   expect((h.mock.messages.get(assignment[0])!.reply_markup as InlineKeyboardMarkup).inline_keyboard).toEqual([]);
 });
@@ -121,7 +125,7 @@ it('restores delivered panel and assignment identities before consuming queued c
 it('suppresses the manual reminder when confirmation is already queued in the same update batch', async () => {
   const h = setup(); const assignment = await h.assign();
   await h.step(h.button('Send test reminder'), h.button("I've checked everyone in", 11, assignment));
-  expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(0);
+  expect(h.reminderSends()).toHaveLength(0);
 });
 it('keeps the scheduled sign-up and statistics independent while a test runs in the morning', async () => {
   const h = setup('09:05'); await h.step(); await h.step(h.event.dm('/test')); await h.step(h.button('Open test sign-up'));
@@ -160,10 +164,10 @@ it('explains rate limiting and retries the reminder after the Telegram delay', a
   const h = setup(); await h.assign(); h.mock.failures.set('sendMessage', { code: 429, retryAfter: 30 });
   await h.step(h.button('Send test reminder'));
   expect(h.panel()[1].text).toContain('retry automatically');
-  await h.step(); expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(1);
+  await h.step(); expect(h.reminderSends()).toHaveLength(1);
   h.mock.failures.clear(); h.time('18:01'); await h.step();
   expect(h.panel()[1].text).toContain('Private test reminder sent');
-  expect(h.calls('sendMessage').filter(c => c.payload.chat_id === 11)).toHaveLength(2);
+  expect(h.reminderSends()).toHaveLength(2);
 });
 it('test sign-up never changes real fair-share credits', async () => {
   const h = setup(); h.register(22); await h.step(h.event.dm('/test')); await h.step(h.button('Open test sign-up'));

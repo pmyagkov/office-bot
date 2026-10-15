@@ -37,7 +37,7 @@ Stats count confirmed duties only, by the assignment's Belgrade date. The record
 
 ## Try it in the real group
 
-`/test`, sent in the private chat, posts a **[TEST]** control panel in the group that walks through sign-up, closing, the reminder, confirmation and stats with labelled messages. It is a rehearsal of the group's day, so its messages belong in the group. Only the starter controls it, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
+`/test` puts a **[TEST]** control panel in the starter's private chat, which walks through sign-up, closing, the reminder, confirmation and stats. What the run rehearses — the sign-up and the assignment — goes to the group with labelled messages, because that is where the participants press its buttons; the controls and the test statistics stay private. Plans made with `/schedule` show up in a test sign-up without being spent, so the real one still gets them. Only the starter controls the run, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
 
 ## Local setup
 

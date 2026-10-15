@@ -6,8 +6,11 @@ import { chooseHelper } from './ranking.js';
 import { applyPlans } from './plans.js';
 
 // Both scheduled days and interactive test runs use these exact transitions.
-export function createFlow({ store, telegram, delivery, schedule, chatId, chooseIndex, flipperNames }: Services) {
+export function createFlow({ store, telegram, delivery, schedule, chatId, chooseIndex, flipperNames, seedChoices }: Services) {
   const save = (day: DayState) => store.set(`day:${day.day}`, day);
+  // What a brand new day starts with. The scheduled day consumes everybody's plans; a test run
+  // overrides this to copy them instead, so a rehearsal does not spend them.
+  const seed = seedChoices ?? ((day: DayState, when: Date) => applyPlans(store, day, when, flipperNames));
   function restoreDeliveries() {
     for (const day of store.list<DayState>('day:')) {
       const signup = store.get<Operation<number>>(`op:signup:${day.day}`);
@@ -31,9 +34,7 @@ export function createFlow({ store, telegram, delivery, schedule, chatId, choose
     let day = store.get<DayState>(`day:${key}`);
     if (!day) {
       day = { day: key, chatId, phase: 'open', signup: { messageId: null, closesAt: closesAt.toISOString(), choices: {} } };
-      // Plans live in the store this flow was given. A test run gets a scoped store that holds
-      // none of them, so an interactive test never consumes anybody's real plan.
-      applyPlans(store, day, now, flipperNames);
+      seed(day, now);
       save(day);
     }
     const signup = day.signup;
