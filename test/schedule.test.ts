@@ -10,8 +10,8 @@ const last = (h: ReturnType<typeof harness>) => sent(h).at(-1);
 const INTRO = "Plan your next sign-up. I apply it the moment the sign-up opens, so a plan made tonight lands on tomorrow morning's sign-up.";
 const KEYBOARD = { inline_keyboard: [
   [{ text: '🙋 Check me in', callback_data: 'plan:checkin' }, { text: '🛡 On duty', callback_data: 'plan:duty' }],
-  [{ text: '❌ Clear plan', callback_data: 'plan:clear' }],
-  [{ text: 'Close', callback_data: 'plan:close' }],
+  [{ text: '🗑 Clear plan', callback_data: 'plan:clear' }],
+  [{ text: '❌ Close', callback_data: 'plan:close' }],
 ] };
 
 const answer = (h: ReturnType<typeof harness>) => h.calls('answerCallbackQuery').at(-1)!.payload.text;

@@ -13,9 +13,10 @@ export const INTRO = "Plan your next sign-up. I apply it the moment the sign-up 
 export const PLAN_KEYBOARD: InlineKeyboardMarkup = { inline_keyboard: [
   [{ text: '🙋 Check me in', callback_data: 'plan:checkin' }, { text: '🛡 On duty', callback_data: 'plan:duty' }],
   // Clearing the plan and walking away from the menu are different things, so they are
-  // different buttons on different rows: Close leaves whatever was planned exactly as it was.
-  [{ text: '❌ Clear plan', callback_data: 'plan:clear' }],
-  [{ text: 'Close', callback_data: 'plan:close' }],
+  // different buttons on different rows, and their icons differ too: 🗑 takes the plan away,
+  // ❌ closes the menu and leaves whatever was planned exactly as it was.
+  [{ text: '🗑 Clear plan', callback_data: 'plan:clear' }],
+  [{ text: '❌ Close', callback_data: 'plan:close' }],
 ] };
 export const PLAN_LABEL: Record<Choice, string> = { checkin: '🙋 Check me in', duty: '🛡 On duty' };
 

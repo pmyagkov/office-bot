@@ -9,7 +9,7 @@ const answer = (h: ReturnType<typeof harness>) => h.calls('answerCallbackQuery')
 const PROMPT = 'How are you listed in Flipper? Send the name exactly as it appears there.';
 const INVALID = "That doesn't look right. Send the name (1–64 characters, one line).";
 const CANCEL = { inline_keyboard: [[{ text: '❌ Cancel', callback_data: 'cancel' }]] };
-const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, { text: '❌ Cancel', callback_data: 'cancel' }]] };
+const BACK = { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin:back' }, { text: '❌ Cancel', callback_data: 'cancel' }]] };
 const REMOVE = { remove_keyboard: true };
 // A plain private text message: the command fixture without the bot_command entity.
 function text(h: ReturnType<typeof harness>, value: string, actor = 11): Update {

@@ -9,8 +9,9 @@ import { at, harness, schedule } from './helpers/harness.js';
 import { groupId, user } from './fixtures/telegram-updates.js';
 
 const now = at('09:30');
-const PICKER = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
-const BACK = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, { text: '❌ Cancel', callback_data: 'cancel' }]] };
+const PICKER = { keyboard: [[{ text: '👤 Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: '❌ Cancel' }]], resize_keyboard: true };
+const CLOSED = (saved: number) => `Closed. Flipper names saved: ${saved}.`;
+const BACK = { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin:back' }, { text: '❌ Cancel', callback_data: 'cancel' }]] };
 const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const sent = (h: ReturnType<typeof harness>) => h.calls('sendMessage').map(c => ({ chat: c.payload.chat_id, text: c.payload.text, markup: c.payload.reply_markup }));
 const last = (h: ReturnType<typeof harness>) => sent(h).at(-1);
@@ -37,7 +38,7 @@ it('/admin lists the command for an admin and refuses a member', async () => {
   expect(h.store.get('conv:22')).toBeUndefined();
 });
 
-it('/admin flipper loops over people and Finish reports the count', async () => {
+it('/admin flipper loops over people and Cancel reports what was saved', async () => {
   const h = setup();
   await startDialog(h);
   expect(last(h)).toEqual({ chat: 11, text: 'Choose a person.', markup: PICKER });
@@ -53,9 +54,21 @@ it('/admin flipper loops over people and Finish reports the count', async () => 
   expect(last(h)?.text).toBe('Flipper name for Bob?');
   await h.updates.handleUpdate(text(h, 'Bob B'), now);
   expect(h.flipperNames(33)).toBe('Bob B');
-  await h.updates.handleUpdate(text(h, 'Finish'), now);
-  expect(last(h)).toEqual({ chat: 11, text: 'Done, saved 2 names.', markup: { remove_keyboard: true } });
+  await h.updates.handleUpdate(text(h, '❌ Cancel'), now);
+  expect(last(h)).toEqual({ chat: 11, text: CLOSED(2), markup: { remove_keyboard: true } });
   expect(h.store.get('conv:11')).toBeNull();
+});
+
+// The picker stays on screen while a name is awaited, so its Cancel has to end the dialog there
+// too. Nobody is listed in Flipper under a name with an emoji in it, so there is no ambiguity.
+it('the picker Cancel ends the dialog from the name step as well', async () => {
+  const h = setup();
+  await startDialog(h);
+  await h.updates.handleUpdate(h.event.usersShared(11, 22), now);
+  await h.updates.handleUpdate(text(h, '❌ Cancel'), now);
+  expect(last(h)).toEqual({ chat: 11, text: CLOSED(0), markup: { remove_keyboard: true } });
+  expect(h.store.get('conv:11')).toBeNull();
+  expect(h.flipperNames(22)).toBeUndefined();
 });
 
 it('Back returns to the picker without saving; the current name is shown and overwritten', async () => {

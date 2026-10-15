@@ -28,12 +28,20 @@ const INVALID = "That doesn't look right. Send the name (1–64 characters, one 
 // Replies are sent as HTML, so the placeholders in the copy are escaped like any other text.
 const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const PICK = 'Choose a person.';
-const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
+// The second key used to say "Finish", which promised more than it did: every name is saved the
+// moment it is given, so leaving the loop commits nothing. It is a Cancel like any other, and
+// it carries the emoji to prove it — which is also what makes it safe to honour while a name is
+// awaited, since nobody is listed in Flipper under a name with an emoji in it.
+const PICKER_CANCEL = '❌ Cancel';
+const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: '👤 Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: PICKER_CANCEL }]], resize_keyboard: true };
+const closed = (saved: number): Reply => ({ pages: [`Closed. Flipper names saved: ${saved}.`], markup: REMOVE });
 // Every dialog carries its own way out, so nobody has to remember a command for it. The button
 // sits on the newest message of the dialog, including a rejected name.
+// ❌ means the same thing everywhere: give this up, change nothing. Taking something away that
+// was already entered — a sign-up, a plan — is 🗑 instead, so the two never look alike.
 const CANCEL_BUTTON = { text: '❌ Cancel', callback_data: 'cancel' };
 const CANCEL: InlineKeyboardMarkup = { inline_keyboard: [[CANCEL_BUTTON]] };
-const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, CANCEL_BUTTON]] };
+const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin:back' }, CANCEL_BUTTON]] };
 const REMOVE: ReplyKeyboardRemove = { remove_keyboard: true };
 const EXPIRED = 'That admin session expired. Send /admin flipper to start again.';
 const expired = (): Reply => ({ pages: [EXPIRED], markup: REMOVE });
@@ -142,12 +150,10 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   if (expiredAdmin) return expired();
   if (isAdminConv(conv)) {
     if (!facts.admin) return deny(store, key, conv);
-    if (conv.kind === 'admin_person') {
-      if (text !== 'Finish') return { pages: [PICK], markup: PICKER };
-      store.set(key, null);
-      return { pages: [`Done, saved ${conv.saved} names.`], markup: REMOVE };
-    }
-    // While a name is awaited every text is the name, including the word "Finish".
+    // The picker is on screen at both steps, so its Cancel ends the dialog from either.
+    if (text === PICKER_CANCEL) { store.set(key, null); return closed(conv.saved); }
+    if (conv.kind === 'admin_person') return { pages: [PICK], markup: PICKER };
+    // While a name is awaited every other text is the name, the word "Finish" included.
     const name = validateFlipperName(text);
     if (!name) return { pages: [INVALID], markup: BACK };
     setFlipperName(store, conv.target.id, name, from.id, now);

@@ -31,7 +31,9 @@ export function signupKeyboard(day: DayState): InlineKeyboardMarkup {
   const data = (action: Choice | 'discard') => `signup:${day.day}:${action}`;
   return { inline_keyboard: [
     [{ text: '🙋 Check me in', callback_data: data('checkin') }, { text: '🛡 On duty', callback_data: data('duty') }],
-    [{ text: '❌ Discard', callback_data: data('discard') }],
+    // 🗑, like Clear plan: it takes away a sign-up that was already made. ❌ is reserved for
+    // giving something up without changing anything.
+    [{ text: '🗑 Discard', callback_data: data('discard') }],
   ] };
 }
 // `signature` is what refreshSignups compares against `signup.rendered` to skip redundant edits.
