@@ -1,7 +1,7 @@
 import type { CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove } from 'grammy/types';
 import { getFlipperName, setFlipperName, validateFlipperName } from './flipper.js';
 import { privateHelp } from './help.js';
-import { getPlan, PLAN_KEYBOARD, planText, setPlan, type Plan } from './plans.js';
+import { closedText, getPlan, PLAN_KEYBOARD, planText, setPlan, type Plan } from './plans.js';
 import { escapeHtml } from './messages.js';
 import type { Outgoing } from './replies.js';
 import { nudgeInGroup, parseSay, sayArgs, sayToGroup, sayToPerson, UNKNOWN_TARGET } from './say.js';
@@ -17,6 +17,10 @@ export type Reply = { pages: string[]; markup?: InlineKeyboardMarkup | ReplyKeyb
 export type Facts = { admin: boolean; member?: boolean; targetIsMember?: boolean; sayTarget?: { id: number; member: boolean } };
 // What the handler needs to address chats other than the one it is answering in.
 export type PrivateContext = { groupChatId: number; botUsername: string };
+// The answer to a button: the toast on the button itself, anything to send, and anything to
+// rewrite in place. The edit is cosmetic — the state it describes is already committed — so the
+// caller performs it after the transaction and does not let a failed edit undo anything.
+export type PrivateAnswer = { text: string; reply?: Reply; edit?: { messageId: number; text: string } };
 type AdminConv = Extract<Conv, { kind: 'admin_person' | 'admin_name' }>;
 
 const PROMPT = 'How are you listed in Flipper? Send the name exactly as it appears there.';
@@ -24,12 +28,20 @@ const INVALID = "That doesn't look right. Send the name (1–64 characters, one 
 // Replies are sent as HTML, so the placeholders in the copy are escaped like any other text.
 const MENU = 'Admin commands:\n/admin flipper — set Flipper names\n/admin say &lt;text&gt; — post to the office group\n/admin say @username &lt;text&gt; — send one person a private message';
 const PICK = 'Choose a person.';
-const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: 'Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: 'Finish' }]], resize_keyboard: true };
+// The second key used to say "Finish", which promised more than it did: every name is saved the
+// moment it is given, so leaving the loop commits nothing. It is a Cancel like any other, and
+// it carries the emoji to prove it — which is also what makes it safe to honour while a name is
+// awaited, since nobody is listed in Flipper under a name with an emoji in it.
+const PICKER_CANCEL = '❌ Cancel';
+const PICKER: ReplyKeyboardMarkup = { keyboard: [[{ text: '👤 Choose person', request_users: { request_id: 1, user_is_bot: false, max_quantity: 1, request_name: true, request_username: true } }, { text: PICKER_CANCEL }]], resize_keyboard: true };
+const closed = (saved: number): Reply => ({ pages: [`Closed. Flipper names saved: ${saved}.`], markup: REMOVE });
 // Every dialog carries its own way out, so nobody has to remember a command for it. The button
 // sits on the newest message of the dialog, including a rejected name.
+// ❌ means the same thing everywhere: give this up, change nothing. Taking something away that
+// was already entered — a sign-up, a plan — is 🗑 instead, so the two never look alike.
 const CANCEL_BUTTON = { text: '❌ Cancel', callback_data: 'cancel' };
 const CANCEL: InlineKeyboardMarkup = { inline_keyboard: [[CANCEL_BUTTON]] };
-const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: 'Back', callback_data: 'admin:back' }, CANCEL_BUTTON]] };
+const BACK: InlineKeyboardMarkup = { inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin:back' }, CANCEL_BUTTON]] };
 const REMOVE: ReplyKeyboardRemove = { remove_keyboard: true };
 const EXPIRED = 'That admin session expired. Send /admin flipper to start again.';
 const expired = (): Reply => ({ pages: [EXPIRED], markup: REMOVE });
@@ -138,12 +150,10 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   if (expiredAdmin) return expired();
   if (isAdminConv(conv)) {
     if (!facts.admin) return deny(store, key, conv);
-    if (conv.kind === 'admin_person') {
-      if (text !== 'Finish') return { pages: [PICK], markup: PICKER };
-      store.set(key, null);
-      return { pages: [`Done, saved ${conv.saved} names.`], markup: REMOVE };
-    }
-    // While a name is awaited every text is the name, including the word "Finish".
+    // The picker is on screen at both steps, so its Cancel ends the dialog from either.
+    if (text === PICKER_CANCEL) { store.set(key, null); return closed(conv.saved); }
+    if (conv.kind === 'admin_person') return { pages: [PICK], markup: PICKER };
+    // While a name is awaited every other text is the name, the word "Finish" included.
     const name = validateFlipperName(text);
     if (!name) return { pages: [INVALID], markup: BACK };
     setFlipperName(store, conv.target.id, name, from.id, now);
@@ -158,12 +168,12 @@ export function handlePrivateMessage(store: Store, m: Message, now: Date, facts:
   return { pages: [`Saved: ${escapeHtml(name)}. Go back to the group and press Check me in.`] };
 }
 
-const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then plan again.';
+const NEEDS_FLIPPER = 'The helper looks you up in Flipper, so a check-in needs your Flipper name. Send /flipper to set it, then /schedule to plan again.';
 const PLAN_PRESSED: Record<Choice, string> ={ checkin: "You're signed up for the next check-in", duty: "You're on duty at the next sign-up" };
 
 // The Cancel button of whichever dialog is running. Rights are not checked: giving a dialog up
 // only clears state. An old button tapped after the dialog ended answers the tap and no more.
-function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): { text: string; reply?: Reply } {
+function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): PrivateAnswer {
   const key = `conv:${cb.from.id}`;
   const { conv, expiredAdmin } = readConv(store, key, now);
   if (expiredAdmin) return { text: 'Not available.', reply: expired() };
@@ -172,22 +182,27 @@ function handleCancelPress(store: Store, cb: CallbackQuery, now: Date): { text: 
   return { text: 'Cancelled', reply: { pages: ['Cancelled.'], markup: REMOVE } };
 }
 
-// The `/schedule` keyboard. A plan replaces the previous one; it is never added to.
-function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } {
+// The `/schedule` keyboard. A plan replaces the previous one; it is never added to. Every press
+// settles the question, so the panel is closed where it stands — rewritten without its buttons,
+// instead of a second live menu underneath the first. `/schedule` opens a fresh one.
+function handlePlanPress(store: Store, cb: CallbackQuery, now: Date, facts: Facts): PrivateAnswer {
   const action = cb.data!.slice('plan:'.length);
-  const show = (plan: Plan | undefined) => ({ pages: [planText(plan)], markup: PLAN_KEYBOARD });
+  const id = cb.from.id;
+  const close = (text: string) => ({ messageId: cb.message!.message_id, text });
+  const settled = (plan: Plan | undefined) => close(closedText(plan));
   if (!facts.member) return { text: 'Not available.' };
-  if (action === 'clear') { store.set(`plan:${cb.from.id}`, null); return { text: 'Your plan was removed', reply: show(undefined) }; }
+  if (action === 'close') return { text: 'Closed', edit: settled(getPlan(store, id, now)) };
+  if (action === 'clear') { store.set(`plan:${id}`, null); return { text: 'Your plan was removed', edit: settled(undefined) }; }
   if (action !== 'checkin' && action !== 'duty') return { text: 'Not available.' };
-  if (action === 'checkin' && !getFlipperName(store, cb.from.id)) {
-    return { text: 'Set your Flipper name first', reply: { pages: [NEEDS_FLIPPER], markup: PLAN_KEYBOARD } };
+  if (action === 'checkin' && !getFlipperName(store, id)) {
+    return { text: 'Set your Flipper name first', edit: close(NEEDS_FLIPPER) };
   }
-  const user: Participant ={ id: cb.from.id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), ...(cb.from.username ? { username: cb.from.username } : {}) };
-  return { text: PLAN_PRESSED[action], reply: show(setPlan(store, user, action, now)) };
+  const user: Participant = { id, name: [cb.from.first_name, cb.from.last_name].filter(Boolean).join(' '), ...(cb.from.username ? { username: cb.from.username } : {}) };
+  return { text: PLAN_PRESSED[action], edit: settled(setPlan(store, user, action, now)) };
 }
 
 // `admin:back` from the name step returns to the picker without saving. Synchronous like handlePrivateMessage.
-export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): { text: string; reply?: Reply } | undefined {
+export function handlePrivateCallback(store: Store, cb: CallbackQuery, now: Date, facts: Facts): PrivateAnswer | undefined {
   const chat = cb.message?.chat;
   if (cb.from.is_bot || chat?.type !== 'private' || chat.id !== cb.from.id) return undefined;
   if (cb.data === 'cancel') return handleCancelPress(store, cb, now);

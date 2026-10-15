@@ -6,7 +6,7 @@ Telegram bot for an office group: daily sign-up for badge check-ins, fair rotati
 
 Monday–Friday, Europe/Belgrade:
 
-- **09:00** — one sign-up message with **🙋 Check me in**, **🛡 On duty** and **❌ Discard**. The choices exclude each other, and the message is edited in place after every press.
+- **09:00** — one sign-up message with **🙋 Check me in**, **🛡 On duty** and **🗑 Discard**. The choices exclude each other, and the message is edited in place after every press.
 - **10:00** — the bot closes sign-up itself, removes the buttons and draws a helper from those on duty. If nobody needs a check-in or nobody is on duty, the same message says so.
 - **Assignment** — a new message tags the helper and lists, by **Flipper name**, who to check in. The helper presses **I've checked everyone in**; the same message gets `✅ Confirmed HH:MM`.
 - **14:00** — one private reminder if the helper has not confirmed.
@@ -17,7 +17,7 @@ Monday–Friday, Europe/Belgrade:
 
 The helper looks people up in the badge system (Flipper), so everyone who presses **Check me in** registers their Flipper name once: pressing the button without one opens the bot's private chat (or send `/start flipper`, later `/flipper` to change it). **On duty** and **Discard** need no name. Everyone should also press `/start` in the private chat once, otherwise Telegram blocks the reminder.
 
-Group admins register names for others: `/admin` in the private chat lists their commands, `/admin flipper` starts a loop of **Choose person** → name until **Finish**.
+Group admins register names for others: `/admin` in the private chat lists their commands, `/admin flipper` starts a loop of **👤 Choose person** → name until **❌ Cancel**. Every name is saved the moment it is given, so leaving the loop commits nothing and only reports how many were saved.
 
 ## Commands
 
@@ -29,6 +29,8 @@ Every dialog carries its own **❌ Cancel** button — on the Flipper prompt, on
 
 The group is for the sign-up message, the assignment and their buttons. A command typed there is answered once with a link to the private chat and does nothing else; a command the bot does not own stays unanswered, because it is probably addressed to another bot. Telegram's own command menu is published for private chats only and deliberately empty for groups, so nothing is suggested there in the first place. `/start` and `/help` list everything available — the `/admin` line only for admins.
 
+Two icons carry meaning across every keyboard: **❌** gives something up and changes nothing (**Cancel**, **Close**), **🗑** takes away something already entered (**Discard**, **Clear plan**). **⬅️ Back** steps back inside a dialog.
+
 **`/schedule`** stores one choice, **🙋 Check me in** or **🛡 On duty**, and applies it the moment the next sign-up opens: a plan made in the evening lands on the next working morning, weekends and holidays included. It is used once, expires after seven days, and a planned check-in needs a Flipper name. Whether you are in the group is checked when you make the plan; if you leave the group before the sign-up opens, the plan is still applied — exactly as a button pressed at 09:30 still counts when the helper is drawn at 10:00.
 
 **`/admin say <text>`** posts in the group through the bot; **`/admin say @username <text>`** writes to one person. Someone the bot cannot reach privately — never pressed Start, or blocked it — is nudged in the group instead, and the admin is told which happened.
@@ -37,7 +39,7 @@ Stats count confirmed duties only, by the assignment's Belgrade date. The record
 
 ## Try it in the real group
 
-`/test`, sent in the private chat, posts a **[TEST]** control panel in the group that walks through sign-up, closing, the reminder, confirmation and stats with labelled messages. It is a rehearsal of the group's day, so its messages belong in the group. Only the starter controls it, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
+`/test` puts a **[TEST]** control panel in the starter's private chat, which walks through sign-up, closing, the reminder, confirmation and stats. What the run rehearses — the sign-up and the assignment — goes to the group with labelled messages, because that is where the participants press its buttons; the controls and the test statistics stay private. Plans made with `/schedule` show up in a test sign-up without being spent, so the real one still gets them. Only the starter controls the run, it expires after an hour, and its records never touch `/today`, `/stats` or `/history`.
 
 ## Local setup
 

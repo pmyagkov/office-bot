@@ -12,7 +12,11 @@ const LIFETIME = 7 * 24 * 3_600_000;
 export const INTRO = "Plan your next sign-up. I apply it the moment the sign-up opens, so a plan made tonight lands on tomorrow morning's sign-up.";
 export const PLAN_KEYBOARD: InlineKeyboardMarkup = { inline_keyboard: [
   [{ text: '🙋 Check me in', callback_data: 'plan:checkin' }, { text: '🛡 On duty', callback_data: 'plan:duty' }],
-  [{ text: '❌ Clear plan', callback_data: 'plan:clear' }],
+  // Clearing the plan and walking away from the menu are different things, so they are
+  // different buttons on different rows, and their icons differ too: 🗑 takes the plan away,
+  // ❌ closes the menu and leaves whatever was planned exactly as it was.
+  [{ text: '🗑 Clear plan', callback_data: 'plan:clear' }],
+  [{ text: '❌ Close', callback_data: 'plan:close' }],
 ] };
 export const PLAN_LABEL: Record<Choice, string> = { checkin: '🙋 Check me in', duty: '🛡 On duty' };
 
@@ -27,6 +31,14 @@ export function planText(plan: Plan | undefined): string {
   return `${INTRO}\n\n${plan ? `Planned: ${PLAN_LABEL[plan.choice]}.` : 'Nothing is planned.'}`;
 }
 
+// A press settles the question, so the panel is rewritten without its buttons: what stands now,
+// and how to come back to it. One menu on screen at a time, never a stack of live ones.
+export function closedText(plan: Plan | undefined): string {
+  return plan
+    ? `Planned: ${PLAN_LABEL[plan.choice]} — I apply it when the next sign-up opens.\n\nSend /schedule to change it.`
+    : 'Nothing is planned.\n\nSend /schedule to plan your next sign-up.';
+}
+
 export function setPlan(store: Store, user: Participant, choice: Choice, now: Date): Plan {
   const plan: Plan = { user, choice, at: now.toISOString() };
   store.set(`plan:${user.id}`, plan);
@@ -37,17 +49,30 @@ export function setPlan(store: Store, user: Participant, choice: Choice, now: Da
 // of the very first version of the sign-up and never causes an edit. Every plan is consumed,
 // including a stale one, so nothing lingers into a later day.
 export function applyPlans(store: Store, day: DayState, now: Date, flipper: (id: number) => string | undefined): void {
+  seed(store, day, now, flipper, true);
+}
+
+// A test run rehearses the day, so the plans have to be visible in it. They are read from the
+// real store and copied, never consumed: the sign-up they were made for still gets them. A
+// rehearsal also says nothing to anybody, so a plan it cannot honour is simply left out.
+export function previewPlans(store: Store, day: DayState, now: Date, flipper: (id: number) => string | undefined): void {
+  seed(store, day, now, flipper, false);
+}
+
+function seed(store: Store, day: DayState, now: Date, flipper: (id: number) => string | undefined, consume: boolean): void {
   const signup = day.signup;
   if (!signup) return;
   for (const stored of store.list<Plan | null>('plan:')) {
-    const plan = livePlan(stored, now);
     if (!stored) continue;
+    const plan = livePlan(stored, now);
     const id = (plan ?? stored).user.id;
-    store.set(`plan:${id}`, null);
+    if (consume) store.set(`plan:${id}`, null);
     if (!plan) continue;
     if (plan.choice === 'checkin' && !flipper(id)) {
-      queueReply(store, `plan-dropped:${day.day}:${id}`, { chatId: id,
-        pages: [`I could not sign you up for a check-in today: your Flipper name is gone. Send /flipper to set it again.`] });
+      if (consume) {
+        queueReply(store, `plan-dropped:${day.day}:${id}`, { chatId: id,
+          pages: ['I could not sign you up for a check-in today: your Flipper name is gone. Send /flipper to set it again.'] });
+      }
       continue;
     }
     signup.choices[String(id)] = { user: plan.user, choice: plan.choice };

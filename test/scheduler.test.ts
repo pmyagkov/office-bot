@@ -11,7 +11,7 @@ function setup(choose = (_n: number) => 0) { const h = harness(':memory:', choos
 afterEach(() => { instances.splice(0).forEach(h => h.store.close()); vi.restoreAllMocks(); });
 const signupButtons = { inline_keyboard: [
   [{ text: '🙋 Check me in', callback_data: 'signup:2026-09-30:checkin' }, { text: '🛡 On duty', callback_data: 'signup:2026-09-30:duty' }],
-  [{ text: '❌ Discard', callback_data: 'signup:2026-09-30:discard' }],
+  [{ text: '🗑 Discard', callback_data: 'signup:2026-09-30:discard' }],
 ] };
 it('opens exactly one sign-up message at nine, without duplicates', async () => {
   const h = setup(); await h.scheduler.tick(at('08:59')); expect(h.calls('sendMessage')).toHaveLength(0);

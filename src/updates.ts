@@ -7,7 +7,7 @@ import { refreshAssignments } from './messages.js';
 import { applySignupPress, confirmAssignment, type PressResult } from './input-state.js';
 import { refreshSignups } from './signup.js';
 import { createTestFlow } from './test-flow.js';
-import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type PrivateContext, type Reply } from './private-chat.js';
+import { handlePrivateCallback, handlePrivateMessage, isAdminConv, liveConv, type Conv, type Facts, type PrivateAnswer, type PrivateContext, type Reply } from './private-chat.js';
 import { flushReplies as flush, queueReply } from './replies.js';
 import { findByUsername, rememberUsername } from './directory.js';
 import { parseSay, sayArgs } from './say.js';
@@ -91,6 +91,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
       // chat, so membership has to be checked here instead.
       else if (cb?.data?.startsWith('plan:')) facts.member = await isMember(cb.from.id);
       let answer: PressResult | undefined;
+      let edit: PrivateAnswer['edit'];
       store.atomic(() => {
         answer = tests.apply(update, now);
         if (!answer && cb) {
@@ -100,6 +101,7 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
             if (result) {
               answer = { text: result.text };
               if (result.reply) queue(`callback:${update.update_id}`, cb.from.id, result.reply);
+              edit = result.edit;
             }
           }
           if (!answer) { const text = confirmAssignment(store, cb, now); if (text) answer = { text }; }
@@ -119,6 +121,12 @@ export function createUpdates(services: Omit<Services, 'chooseIndex'> & { userna
         store.set('offset', update.update_id + 1);
       });
       if (update.callback_query && answer) await telegram.answerCallback(update.callback_query.id, answer.text, answer.url);
+      // Closing a menu is cosmetic and the choice it describes is already committed, so a
+      // refused edit must not keep the update from being consumed.
+      if (edit && cb) {
+        try { await telegram.editMessage(cb.from.id, edit.messageId, edit.text); }
+        catch { console.error(JSON.stringify({ event: 'panel_close_failed', message: edit.messageId })); }
+      }
       await refreshSignups(store, telegram, schedule.zone);
       await refreshAssignments(store, telegram, schedule.zone);
       // The test flow is flushed once per runtime step, after the whole batch is committed.

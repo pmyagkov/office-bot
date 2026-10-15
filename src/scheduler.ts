@@ -9,6 +9,8 @@ import { createFlow } from './flow.js';
 export type Services = {
   store: Store; telegram: TelegramPort; delivery: Delivery; schedule: Schedule; chatId: number;
   chooseIndex: (size: number) => number; flipperNames: (id: number) => string | undefined; username?: string; clock?: () => Date;
+  // Overridden by a test run, which copies plans instead of consuming them.
+  seedChoices?: (day: DayState, now: Date) => void;
 };
 export function createScheduler(services: Services) {
   const { store, telegram, schedule, clock } = services;

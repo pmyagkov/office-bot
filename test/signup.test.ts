@@ -43,7 +43,7 @@ it('renders both lists with Telegram names, counts and a dash for an empty list'
   ].join('\n'));
   expect(signupKeyboard(full)).toEqual({ inline_keyboard: [
     [{ text: '🙋 Check me in', callback_data: 'signup:2026-10-01:checkin' }, { text: '🛡 On duty', callback_data: 'signup:2026-10-01:duty' }],
-    [{ text: '❌ Discard', callback_data: 'signup:2026-10-01:discard' }],
+    [{ text: '🗑 Discard', callback_data: 'signup:2026-10-01:discard' }],
   ] });
 });
 
