@@ -18,7 +18,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { instances.splice(0).forEach(h => h.store.close()); for (const cleanup of cleanups.splice(0)) await cleanup(); });
 const config = loadConfig({ TELEGRAM_BOT_TOKEN: '123456:dummy_dummy_dummy', TELEGRAM_CHAT_ID: String(groupId) });
 it('runs an entire day through the production polling/input path', async () => {
-  const h = harness(); instances.push(h); let now = at('09:00');
+  const h = harness(); instances.push(h); let now = at('09:00'); h.mock.members.set(22, 'member');
   const runtime = createRuntime({ ...config, heartbeat: '' }, h.store, h.telegram, () => now, 'office_test_bot');
   await runtime.step(); const signup = h.day().signup!.messageId!; h.register(22); h.register(11);
   h.mock.updates.push(h.event.press('2026-09-30', 'duty', 22, signup), h.event.press('2026-09-30', 'checkin', 22, signup), h.event.press('2026-09-30', 'duty', 11, signup));

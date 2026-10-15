@@ -4,7 +4,7 @@ import type { DayState } from '../src/types.js';
 import { renderHistory, renderStats, renderToday } from '../src/reports.js';
 const instances: ReturnType<typeof harness>[] = [];
 afterEach(() => instances.splice(0).forEach(h => h.store.close()));
-async function setup() { const h = harness(); instances.push(h); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); for (const id of [22, 33, 44]) h.vote('request', id); await h.close(); return h; }
+async function setup() { const h = harness(); instances.push(h); h.mock.members.set(11, 'member'); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); for (const id of [22, 33, 44]) h.vote('request', id); await h.close(); return h; }
 it('counts a duty separately from three completed check-ins through /stats', async () => {
   const h = await setup(); await h.updates.handleUpdate(h.event.dm('/stats'), at('11:00')); expect(h.calls('sendMessage').at(-1)?.payload.text).toContain('No confirmed');
   await h.updates.handleUpdate(h.event.click('2026-09-30', 11, 2), at('11:01')); await h.updates.handleUpdate(h.event.dm('/stats@office_test_bot'), at('11:02'));

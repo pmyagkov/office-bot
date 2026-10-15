@@ -23,6 +23,21 @@ it.each(['/start', '/flipper', '/schedule', '/admin', '/today', '/stats', '/hist
     expect(sent(h).slice(before)).toEqual([{ chat: groupId, text: nudge(command) }]);
   });
 
+// Sending them back "/stats" when they typed "/stats month" would quietly change the report.
+it('repeats the command with its arguments', async () => {
+  const h = harness();
+  await h.updates.handleUpdate(h.event.command('/stats month', groupId, 11), now);
+  expect(sent(h)).toEqual([{ chat: groupId, text: nudge('/stats month') }]);
+});
+
+it('keeps the repeated command short, on one line and free of markup', async () => {
+  const h = harness();
+  await h.updates.handleUpdate(h.event.command('/stats <b>a</b>\nsecond line', groupId, 11), now);
+  expect(sent(h).at(-1)!.text).toContain('/stats &lt;b&gt;a&lt;/b&gt; second line only works');
+  await h.updates.handleUpdate(h.event.command(`/stats ${'x'.repeat(200)}`, groupId, 11), now);
+  expect(sent(h).at(-1)!.text).toContain(`/stats ${'x'.repeat(57)}… only works`);
+});
+
 it('answers the command in the group only once, even addressed by name', async () => {
   const h = harness();
   await h.updates.handleUpdate(h.event.command('/today@office_test_bot', groupId, 11), now);

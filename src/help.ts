@@ -5,6 +5,8 @@ import { escapeHtml } from './messages.js';
 // outside this list is left alone, because it is probably addressed to another bot.
 // Giving a dialog up is a button on the dialog itself, not a command.
 export const COMMANDS = ['start', 'help', 'flipper', 'schedule', 'today', 'stats', 'history', 'test', 'admin'] as const;
+// These show the group's own data, or act inside the group, so they are for its members.
+export const MEMBERS_ONLY: readonly string[] = ['today', 'stats', 'history', 'test'];
 
 // Shown for /start and /help, so nobody has to guess what exists.
 export function privateHelp(admin: boolean): string {
@@ -23,7 +25,12 @@ export function privateHelp(admin: boolean): string {
   ].join('\n\n');
 }
 
+// The command is quoted back with its arguments, so somebody who typed `/stats month` is not
+// sent away with `/stats`. It is whatever they wrote, so it is collapsed to one line, cut to a
+// length that cannot flood the group, and escaped like any other text.
 export function privateOnlyNudge(command: string, botUsername: string): string {
   const bot = escapeHtml(botUsername);
-  return `${command} only works in my private chat. Open <a href="https://t.me/${bot}">@${bot}</a>, press Start, then send ${command} there.`;
+  const characters = Array.from(command.replace(/\s+/g, ' ').trim());
+  const typed = escapeHtml(characters.length > 64 ? `${characters.slice(0, 64).join('')}…` : command.replace(/\s+/g, ' ').trim());
+  return `${typed} only works in my private chat. Open <a href="https://t.me/${bot}">@${bot}</a>, press Start, then send ${typed} there.`;
 }

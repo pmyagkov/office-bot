@@ -7,7 +7,7 @@ import { groupId } from './fixtures/telegram-updates.js';
 const instances: ReturnType<typeof harness>[] = [];
 afterEach(() => instances.splice(0).forEach(h => h.store.close()));
 // Group messages before any reminder: the sign-up message (id 1) and the assignment (id 2).
-async function setup() { const h = harness(); instances.push(h); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); h.vote('request', 22); await h.close(); return h; }
+async function setup() { const h = harness(); instances.push(h); h.mock.members.set(11, 'member'); await h.scheduler.tick(at('09:00')); h.vote('helper', 11); h.vote('request', 22); await h.close(); return h; }
 it('sends one private reminder at fourteen, retaining that fact after restart', async () => {
   const h = await setup(); await h.scheduler.tick(at('13:59')); expect(h.calls('sendMessage')).toHaveLength(2);
   await h.scheduler.tick(at('14:00')); await h.scheduler.tick(at('14:01'));

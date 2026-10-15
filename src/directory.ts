@@ -21,17 +21,16 @@ export function rememberUsername(store: Store, userId: number, username: string 
 }
 
 // Sign-up records are the fallback: they carry usernames of people who pressed a button in the
-// group long before the index existed. The newest day wins, and anybody known to have renamed
-// since is skipped.
+// group long before the index existed, and sometimes a newer handle than the index has. The
+// newest day wins. Nothing stored here is trusted on its own — the caller checks the answer
+// against the handle Telegram reports now — so no stored record may veto another.
 export function findByUsername(store: Store, username: string): number | undefined {
   const wanted = username.replace(/^@/, '').toLowerCase();
   const indexed = store.get<Entry | null>(key(wanted))?.id;
   if (indexed !== undefined) return indexed;
   for (const day of store.list<DayState>('day:').reverse()) {
     for (const entry of Object.values(day.signup?.choices ?? {})) {
-      if (entry.user.username?.toLowerCase() !== wanted) continue;
-      const handle = store.get<string | null>(handleKey(entry.user.id));
-      if (!handle || handle === wanted) return entry.user.id;
+      if (entry.user.username?.toLowerCase() === wanted) return entry.user.id;
     }
   }
   return undefined;

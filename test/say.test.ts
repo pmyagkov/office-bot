@@ -120,8 +120,9 @@ it('a username its owner has given up is no longer resolved to them', async () =
   await h.scheduler.tick(at('09:00'));
   h.register(22);
   await h.updates.handleUpdate(h.event.press('2026-09-30', 'checkin', 22, h.day().signup!.messageId!, undefined, undefined, 'alice'), now);
-  await h.updates.handleUpdate(h.event.command('/start', 22, 22, 'bob'), now);
-  await h.updates.handleUpdate(h.event.command('/admin say @alice Your badge is ready', 11, 11), now);
+  await h.updates.handleUpdate(h.event.dm('/start', 22, 'bob'), now);
+  h.mock.usernames.set(22, 'bob'); // Telegram agrees: 22 answers to @bob now, not @alice.
+  await h.updates.handleUpdate(h.event.dm('/admin say @alice Your badge is ready'), now);
   expect(sent(h).filter(s => s.text === 'Your badge is ready')).toEqual([]);
   expect(sent(h).slice(-2)).toEqual([
     { chat: groupId, text: expect.stringContaining("I can't reach @alice privately") },
@@ -158,6 +159,33 @@ it('a nudge the office group rejects is still reported to the admin', async () =
   h.mock.blocked.add(groupId);
   await h.updates.handleUpdate(h.event.command('/admin say @ghost Your badge is ready', 11, 11), now);
   expect(sent(h).at(-1)).toEqual({ chat: 11, text: "I don't know @ghost yet. The office group rejected the note, too." });
+});
+
+// A 5xx or a dropped connection leaves the outcome unknown. The bot never resends blindly, so
+// it must not claim the message arrived either.
+it('an unconfirmed group post is reported as unknown, not as sent', async () => {
+  const h = setup();
+  h.mock.failures.set('sendMessage', { code: 500 });
+  await h.updates.handleUpdate(h.event.dm('/admin say Lift is broken today'), now);
+  expect(sent(h)).toEqual([
+    { chat: groupId, text: 'Lift is broken today' },
+    { chat: 11, text: 'Telegram did not confirm that message. It may or may not have arrived, and I will not send it again.' },
+  ]);
+});
+
+// The handle last seen in a private message can itself be out of date: a sign-up press carries
+// a newer one. What Telegram reports now decides, and nothing earlier may veto it.
+it('reaches a member whose newest handle is only on a sign-up record', async () => {
+  const h = setup();
+  await h.updates.handleUpdate(h.event.dm('/start', 22, 'bob_old'), now);
+  await h.scheduler.tick(at('09:00'));
+  h.register(22);
+  await h.updates.handleUpdate(h.event.press('2026-09-30', 'checkin', 22, h.day().signup!.messageId!, undefined, undefined, 'alice'), now);
+  await h.updates.handleUpdate(h.event.dm('/admin say @alice Your badge is ready'), now);
+  expect(sent(h).slice(-2)).toEqual([
+    { chat: 22, text: 'Your badge is ready' },
+    { chat: 11, text: 'Sent to @alice.' },
+  ]);
 });
 
 it('a non-admin cannot use /admin say', async () => {

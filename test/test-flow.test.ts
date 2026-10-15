@@ -10,6 +10,8 @@ const instances: ReturnType<typeof harness>[] = [];
 afterEach(() => instances.splice(0).forEach(h => h.store.close()));
 function setup(time = '18:00') {
   const h = harness(); instances.push(h); let now = at(time);
+  // /test is for the group's members, and these scenarios are about the flow, not the rights.
+  for (const id of [11, 22]) h.mock.members.set(id, 'member');
   const config = { token: '123456:dummy_dummy_dummy', chatId: groupId, database: ':memory:', heartbeat: '', schedule };
   let runtime = createRuntime(config, h.store, h.telegram, () => now, 'office_test_bot');
   const step = async (...updates: Update[]) => { h.mock.updates.push(...updates); await runtime.step(); };
